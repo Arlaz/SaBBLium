@@ -1,0 +1,58 @@
+[project]
+name = "SaBBLium"
+authors = [
+    { name = "Ludovic Denoyer" },
+    { name = "Alfredo de la Fuente"},
+    { name = "Song Duong"},
+    { name = "Jean-Baptiste Gaya"},
+    { name = "Pierre-Alexandre Kamienny"},
+    { name = "Daniel H. Thompson"},
+    { name = "Olivier Sigaud" },
+    { name = "Mathis Koroglu", email = "mathis.koroglu@etu.sorbonne-universite.fr" }
+]
+maintainers = [
+    { name = "Mathis Koroglu", email = "mathis.koroglu@etu.sorbonne-universite.fr" }
+]
+
+description = "SaBBLium is a Flexible and Simple Library for Learning Sequential Agents"
+keywords = ["sequential learning", "reinforcement learning"]
+
+readme = "README.md"
+license = { file = "LICENSE" }
+
+requires-python = ">=3.7"
+classifiers = [
+    "Programming Language :: Python :: 3.7",
+    "Programming Language :: Python :: 3.8",
+    "Programming Language :: Python :: 3.9",
+    "Programming Language :: Python :: 3.10",
+    "Programming Language :: Python :: 3.11",
+    "Programming Language :: Python :: 3 :: Only",
+]
+dependencies = [
+    "torchvision",
+    "gymnasium",
+]
+dynamic = ["version"]
+
+[project.optional-dependencies]
+plot = ["matplotlib", "seaborn"]
+format = ["black", "isort"]
+
+[build-system]
+requires = ["setuptools", "setuptools-scm"]
+build-backend = "setuptools.build_meta"
+
+[tool.setuptools.packages.find]
+include = ["sabblium*"]
+namespaces = true
+
+[tool.setuptools_scm]
+write_to = "sabblium/_version.py"
+
+[tool.black]
+line-length = 79
+target_version = ['py311']
+
+# ... other project metadata fields as specified in:
+#     https://packaging.python.org/en/latest/specifications/declaring-project-metadata/
