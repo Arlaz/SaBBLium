@@ -112,24 +112,26 @@ class GymAgent(TAgent):
         self.n_envs = n_envs
         self.input = input_string
         self.output = output_string
-        self._max_episode_steps = max_episode_steps
 
         self.ghost_params = torch.nn.Parameter(torch.randn(()))
 
         self.envs = None
-        self.timestep = None
-        self.timestep_from_reset = None
+
+        self._max_episode_steps = max_episode_steps
+        self._timestep = None
+        self._timestep_from_reset = None
         self._is_autoreset = False
         self._stopped = {}
         self._last_frame = {}
         self._seed = None
+        self._nb_reset = 0
 
         self._initialize_envs(n_envs)
 
     def _initialize_envs(self, n):
         self.envs = [self.make_env_fn(**self.env_args) for _ in range(n)]
-        self.timestep = torch.zeros(len(self.envs), dtype=torch.int64)
-        self.timestep_from_reset = 0
+        self._timestep = torch.zeros(len(self.envs), dtype=torch.int64)
+        self._timestep_from_reset = 0
         self.cumulated_reward = {}
         self.observation_space = self.envs[0].observation_space
         self.action_space = self.envs[0].action_space
@@ -150,10 +152,13 @@ class GymAgent(TAgent):
     def _reset(self, k, render):
         env = self.envs[k]
         self.cumulated_reward[k] = 0.0
-        self.timestep[k] = 0
 
-        o, info = env.reset(seed=self._seed + k)
+        s = self._max_episode_steps * self.n_envs * self._nb_reset * self._seed
+        s += ((k + 1) * (self._timestep[k].item() + 1 if self._is_autoreset else 1))
+        o, info = env.reset(seed=s)
         observation = _format_frame(o)
+
+        self._timestep[k] = 0
 
         if isinstance(observation, torch.Tensor):
             observation = {"env_obs": observation}
@@ -169,7 +174,7 @@ class GymAgent(TAgent):
             "stopped": torch.tensor([False]),
             "reward": torch.tensor([0.0]).float(),
             "cumulated_reward": torch.tensor([self.cumulated_reward[k]]),
-            "timestep": torch.tensor([self.timestep[k]]),
+            "timestep": torch.tensor([self._timestep[k]]),
         }
         self._last_frame[k] = ret
         return _torch_type(ret)
@@ -190,13 +195,13 @@ class GymAgent(TAgent):
         if render:
             observation["rendering"] = env.render().unsqueeze(0)
 
-        self.timestep[k] += 1
+        self._timestep[k] += 1
 
         if terminated or truncated:
-            self.timestep[k] = 0
+            self._timestep[k] = 0
 
         if self._is_autoreset:
-            stopped = self.timestep_from_reset >= self._max_episode_steps
+            stopped = self._timestep_from_reset + 1 >= self._max_episode_steps
         else:
             stopped = terminated or truncated
 
@@ -207,7 +212,7 @@ class GymAgent(TAgent):
             "stopped": torch.tensor([stopped]),
             "reward": torch.tensor([reward]).float(),
             "cumulated_reward": torch.tensor([self.cumulated_reward[k]]),
-            "timestep": torch.tensor([self.timestep[k]]),
+            "timestep": torch.tensor([self._timestep[k]]),
         }
         self._last_frame[k] = ret
         return _torch_type(ret)
@@ -226,11 +231,12 @@ class GymAgent(TAgent):
         If render is True, then the output of env.render() is written as env/rendering
         """
 
-        self.timestep_from_reset += 1
+        self._timestep_from_reset += 1
 
         observations = []
         if t == 0:
-            self.timestep_from_reset = 0
+            self._timestep_from_reset = 0
+            self._nb_reset += 1
             if self._seed is None:
                 self.seed(self.default_seed)
             for k, env in enumerate(self.envs):
