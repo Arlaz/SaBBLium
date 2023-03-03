@@ -8,18 +8,20 @@
 #
 
 import bz2
-import numpy as np
-import pandas as pd
 import pickle
 import time
+from typing import *
+
+import numpy as np
+import pandas as pd
 import wandb
 from omegaconf import DictConfig
 from torch.utils.tensorboard import SummaryWriter
 from tqdm import tqdm
-from typing import *
 
 
 class TFPrefixLogger:
+
     def __init__(self, prefix, logger):
         self.logger = logger
         self.prefix = prefix
@@ -72,9 +74,7 @@ class TFLogger(SummaryWriter):
         self.log_dir = log_dir
         self.every_n_seconds = every_n_seconds
         if self.every_n_seconds is None:
-            print(
-                "[Deprecated] sabblium.logger: use 'every_n_seconds' instead of cache_size"
-            )
+            print("[Deprecated] sabblium.logger: use 'every_n_seconds' instead of cache_size")
         else:
             self.save_every = None
         self._start_time = time.time()
@@ -284,14 +284,7 @@ class WandbLogger:
             pass
         else:
             if self.verbose:
-                print(
-                    "['"
-                    + name
-                    + "' at "
-                    + str(iteration)
-                    + "] = "
-                    + str(value)
-                )
+                print("['" + name + "' at " + str(iteration) + "] = " + str(value))
             if "/" in name:
                 iteration_name = "/".join(name.split("/")[:-1] + ["iteration"])
             else:
@@ -299,9 +292,7 @@ class WandbLogger:
             self.logs[name] = value
             self.logs[iteration_name] = iteration
             t = time.time()
-            if ((t - self.save_time) > self.every_n_seconds) or (
-                "evaluation/iteration" in self.logs
-            ):
+            if ((t - self.save_time) > self.every_n_seconds) or ("evaluation/iteration" in self.logs):
                 wandb.log(self.logs, commit=True)
                 self.save_time = t
                 self.logs = {}
@@ -318,6 +309,7 @@ class WandbLogger:
 
 
 class Log:
+
     def __init__(self, hps, values):
         self.hps = hps
         self.values = values
@@ -417,6 +409,7 @@ class Log:
 
 
 class Logs:
+
     def __init__(self):
         self.logs = []
         self.hp_names = None
@@ -529,11 +522,7 @@ def read_log(directory, use_bz2=True, debug=False):
                         print(name, value, type(value))
                     if isinstance(value, np.int64):
                         value = int(value)
-                    if (
-                        isinstance(value, int)
-                        or isinstance(value, float)
-                        or isinstance(value, str)
-                    ):
+                    if isinstance(value, int) or isinstance(value, float) or isinstance(value, str):
                         if name not in values:
                             values[name] = []
                         while len(values[name]) < iteration + 1:
@@ -562,11 +551,7 @@ def get_directories(directory, use_bz2=True):
     if use_bz2:
         name = "db.pickle.bzip2"
 
-    return [
-        dir_path
-        for dir_path, dir_names, filenames in os.walk(directory)
-        if name in filenames
-    ]
+    return [dir_path for dir_path, dir_names, filenames in os.walk(directory) if name in filenames]
 
 
 def read_directories(directories, use_bz2=True):
@@ -606,9 +591,7 @@ def _create_col(df, hps, _name):
     return pd.concat(vs)
 
 
-def plot_dataframe(
-    df, y, x="iteration", hue=None, style=None, row=None, col=None, kind="line"
-):
+def plot_dataframe(df, y, x="iteration", hue=None, style=None, row=None, col=None, kind="line"):
     """
     Plot a dataframe using seaborn
     """
@@ -653,6 +636,4 @@ def plot_dataframe(
 
     # df = convert_iteration_to_steps(df)
 
-    sns.relplot(
-        x=x, y=y, hue=hue, style=style, row=row, col=col, data=df, kind=kind
-    )
+    sns.relplot(x=x, y=y, hue=hue, style=style, row=row, col=col, data=df, kind=kind)

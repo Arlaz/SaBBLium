@@ -53,9 +53,26 @@ namespaces = true
 [tool.setuptools_scm]
 write_to = "sabblium/_version.py"
 
-[tool.black]
-line-length = 79
-target_version = ['py311']
+[tool.yapf]
+allow_multiline_lambdas = true
+allow_multiline_dictionary_keys = true
+arithmetic_precedence_indication = true
+based_on_style = "pep8"
+column_limit = 120
+coalesce_brackets = false
+indent_width = 4
+indent_closing_brackets = false
+spaces_before_comment = 1
+split_before_logical_operator = true
+spaces_around_power_operator = true
+spaces_around_default_or_named_assign = false
+spaces_around_dict_delimiters = false
+spaces_around_list_delimiters = false
+spaces_around_tuple_delimiters = false
+spaces_around_subscript_colon = false
+split_before_bitwise_operator = true
+split_before_dot = true
+split_complex_comprehension = true
 
 # ... other project metadata fields as specified in:
 #     https://packaging.python.org/en/latest/specifications/declaring-project-metadata/

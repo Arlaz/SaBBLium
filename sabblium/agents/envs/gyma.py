@@ -6,12 +6,13 @@
 # This source code is licensed under the MIT license found in the
 # LICENSE file in the root directory of this source tree.
 #
+import copy
 
 import numpy as np
 import torch
 from gymnasium.wrappers import AutoResetWrapper
 
-from sabblium import TAgent
+from sabblium import SeedableAgent, SerializableAgent, TimeAgent
 
 
 def _convert_action(action):
@@ -44,7 +45,7 @@ def _format_frame(frame):
             t = t.long()
         return t
     elif isinstance(frame, torch.Tensor):
-        return frame.unsqueeze(0)  # .float()
+        return frame.unsqueeze(0)
     elif isinstance(frame, bool):
         return torch.tensor([frame]).bool()
     elif isinstance(frame, int):
@@ -78,7 +79,7 @@ def _torch_cat_dict(d):
     return r
 
 
-class GymAgent(TAgent):
+class GymAgent(TimeAgent, SeedableAgent, SerializableAgent):
     """Create an Agent from a gymnasium environment
     To create an auto-reset GymAgent, use the gymnasium `AutoResetWrapper` before creating the `GymAgent
     """
@@ -93,6 +94,8 @@ class GymAgent(TAgent):
         input_string="action",
         output_string="env/",
         max_episode_steps=None,
+        *args,
+        **kwargs,
     ):
         """Create an agent from a Gymnasium environment
 
@@ -104,7 +107,7 @@ class GymAgent(TAgent):
             output_string (str, optional): [the output prefix of the environment]. Defaults to "env/".
             max_episode_steps (int, optional): Max number of steps per episode. Defaults to None (never ends)
         """
-        super().__init__()
+        super().__init__(*args, **kwargs)
         assert n_envs > 0, "n_envs must be > 0"
 
         self.make_env_fn = make_env_fn
@@ -123,7 +126,6 @@ class GymAgent(TAgent):
         self._is_autoreset = False
         self._stopped = {}
         self._last_frame = {}
-        self._seed = None
         self._nb_reset = 0
 
         self._initialize_envs(n_envs)
@@ -144,17 +146,15 @@ class GymAgent(TAgent):
             wrapper = wrapper.env
 
         if self._is_autoreset and self._max_episode_steps is None:
-            raise ValueError(
-                "AutoResetWrapper without max_episode_steps argument given will never"
-                "stop the GymAgent if wrapped with a TemporalAgent"
-            )
+            raise ValueError("AutoResetWrapper without max_episode_steps argument given will never"
+                             "stop the GymAgent if wrapped with a TemporalAgent")
 
     def _reset(self, k, render):
         env = self.envs[k]
         self.cumulated_reward[k] = 0.0
 
         s = self._max_episode_steps * self.n_envs * self._nb_reset * self._seed
-        s += ((k + 1) * (self._timestep[k].item() + 1 if self._is_autoreset else 1))
+        s += (k+1) * (self._timestep[k].item() + 1 if self._is_autoreset else 1)
         o, info = env.reset(seed=s)
         observation = _format_frame(o)
 
@@ -243,9 +243,7 @@ class GymAgent(TAgent):
                 observations.append(self._reset(k, render))
         else:
             action = self.get((self.input, t - 1))
-            assert (
-                action.size()[0] == self.n_envs
-            ), "Incompatible number of envs"
+            assert action.size()[0] == self.n_envs, "Incompatible number of envs"
 
             for k, env in enumerate(self.envs):
                 if self._is_autoreset or not self._last_frame[k]["stopped"]:
@@ -254,15 +252,31 @@ class GymAgent(TAgent):
                     observations.append(self._last_frame[k])
         self.set_obs(observations, t)
 
-    def seed(self, seed: int):
-        """Set the seed of the environments
-        Will only take effect if called before the first forward call
-        """
-        assert self._seed is None, "Seed has already been set"
-        self._seed = seed
-
     def get_observation_space(self):
+        """Return the observation space of the environment"""
         return self.observation_space
 
     def get_action_space(self):
+        """Return the action space of the environment"""
         return self.action_space
+
+    def serialize(self):
+        """Return a serializable GymAgent without the environments"""
+        state = copy.copy(self)
+        state.envs = None
+        return state
+
+
+class ImageGymAgent(GymAgent, SerializableAgent):
+    """
+    GymAgent compatible with image observations
+    """
+
+    def __init__(self, *args, **kwargs):
+        super().__init__(*args, **kwargs)
+
+    def serialize(self):
+        """Return a serializable GymAgent without the environments"""
+        state = copy.copy(self)
+        state.envs = None
+        return state

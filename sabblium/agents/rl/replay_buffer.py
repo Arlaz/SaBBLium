@@ -8,12 +8,14 @@
 #
 
 import copy
+
 import torch
 
 from sabblium import Workspace
 
 
 class ReplayBuffer:
+
     def __init__(self, max_size, device=torch.device("cpu")):
         self.max_size = max_size
         self.variables = None
@@ -51,10 +53,7 @@ class ReplayBuffer:
         The given workspace must have keys of shape : [time_size][batch_size][key_dim]
         """
 
-        new_data = {
-            k: workspace.get_full(k).detach().to(self.device)
-            for k in workspace.keys()
-        }
+        new_data = {k: workspace.get_full(k).detach().to(self.device) for k in workspace.keys()}
         self.init_workspace(new_data)
 
         batch_size = None
@@ -93,12 +92,8 @@ class ReplayBuffer:
                     arange = torch.arange(batch_end_size)
                     # the part of the indexes at the beginning of the RB
                     # print("insertion intermediate computed:", indexes)
-                    indexes = torch.cat(
-                        (indexes, torch.arange(batch_begin_size)), 0
-                    )
-                    arange = torch.cat(
-                        (arange, torch.arange(batch_begin_size)), 0
-                    )
+                    indexes = torch.cat((indexes, torch.arange(batch_begin_size)), 0)
+                    arange = torch.cat((arange, torch.arange(batch_begin_size)), 0)
                     # print("insertion full:", indexes)
                     self.position = batch_begin_size
                 indexes = indexes.to(dtype=torch.long, device=v.device)
@@ -116,9 +111,7 @@ class ReplayBuffer:
         print(self.variables["env/env_obs"])
 
     def get_shuffled(self, batch_size):
-        who = torch.randint(
-            low=0, high=self.size(), size=(batch_size,), device=self.device
-        )
+        who = torch.randint(low=0, high=self.size(), size=(batch_size, ), device=self.device)
         workspace = Workspace()
         for k in self.variables:
             workspace.set_full(k, self.variables[k][who].transpose(0, 1))

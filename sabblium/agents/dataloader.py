@@ -17,10 +17,10 @@ class ShuffledDatasetAgent(Agent):
     """An agent that read a dataset in a shuffle order, in an infinite way."""
 
     def __init__(
-        self,
-        dataset,
-        batch_size,
-        output_names=("x", "y"),
+            self,
+            dataset,
+            batch_size,
+            output_names=("x", "y"),
     ):
         """Create the agent
 

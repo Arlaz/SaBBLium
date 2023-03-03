@@ -7,53 +7,74 @@
 # LICENSE file in the root directory of this source tree.
 #
 
+import torch
 import torch.nn as nn
 
-from sabblium import Agent, TAgent
+from sabblium import Agent, TimeAgent, SerializableAgent
+from sabblium.agents.seeding import SeedableAgent
 
 
-class Agents(Agent):
+class Agents(SeedableAgent, SerializableAgent):
     """An agent that contains multiple agents executed sequentially.
+    Warnings:
+        * the agents are executed in the order they are added to the agent.
+        * the agents are serialized only if they inherit from `SerializableAgent`
+        * the agents are seeded only if they inherit from `SeedableAgent`, with the same seed provided
 
     Args:
         Agent ([sabblium.Agent]): The agents
     """
 
-    def __init__(self, *agents, name=None):
+    def __init__(self, *agents, name=None, **kwargs):
         """Creates the agent from multiple agents
 
         Args:
-            name ([str], optional): [name of the resulting agent]. Defaults to None.
+            name ([str], optional): [name of the resulting agent]. Default to None.
         """
-        super().__init__(name=name)
+        super().__init__(name=name, **kwargs)
         for a in agents:
             assert isinstance(a, Agent)
         self.agents = nn.ModuleList(agents)
+
+    def __getitem__(self, k):
+        return self.agents[k]
 
     def __call__(self, workspace, **kwargs):
         for a in self.agents:
             a(workspace, **kwargs)
 
-    def forward(**kwargs):
-        raise NotImplementedError
-
-    def seed(self, seed):
-        for a in self.agents:
-            a.seed(seed)
-
-    def __getitem__(self, k):
-        return self.agents[k]
-
     def get_by_name(self, n):
         r = []
         for a in self.agents:
-            r = r + a.get_by_name(n)
+            r += a.get_by_name(n)
         if n == self._name:
-            r = r + [self]
+            r += [self]
         return r
 
+    def seed(self, seed: int):
+        """Seed the agents
+        Warning: the agents are seeded  with the same seed and only if they inherit from `SeedableAgent`
+        Args:
+            seed (int): the seed to use
+        """
+        for a in self.agents:
+            if isinstance(a, SeedableAgent):
+                a.seed(seed)
 
-class CopyTAgent(Agent):
+    def serialize(self):
+        """Serialize the agents
+        Warning: the agents are serialized only if they inherit from `SerializableAgent`
+        Args:
+            filename (str): the filename to use
+        """
+        serializable_agents = [
+            a.serialize() if isinstance(a, SerializableAgent) else (a.__class__.__name__, a.get_name())
+            for a in self.agents
+        ]
+        return Agents(*serializable_agents, name=self._name)
+
+
+class CopyTAgent(SerializableAgent):
     """An agent that copies a variable
 
     Args:
@@ -87,7 +108,7 @@ class CopyTAgent(Agent):
                 self.set((self.output_name, t), x.detach())
 
 
-class PrintAgent(Agent):
+class PrintAgent(SerializableAgent):
     """An agent to generate print in the console (mainly for debugging)
 
     Args:
@@ -107,7 +128,7 @@ class PrintAgent(Agent):
             print(n, " = ", self.get((n, t)))
 
 
-class TemporalAgent(TAgent):
+class TemporalAgent(TimeAgent, SeedableAgent, SerializableAgent):
     """Execute one Agent over multiple timestamps
 
     Args:
@@ -124,9 +145,7 @@ class TemporalAgent(TAgent):
         super().__init__(name=name)
         self.agent = agent
 
-    def __call__(
-        self, workspace, t=0, n_steps=None, stop_variable=None, **kwargs
-    ):
+    def __call__(self, workspace, t=0, n_steps=None, stop_variable=None, **kwargs):
         """Execute the agent starting at time t, for n_steps
 
         Args:
@@ -149,14 +168,42 @@ class TemporalAgent(TAgent):
                 if _t >= t + n_steps:
                     break
 
-    def forward(self, **kwargs):
-        raise NotImplementedError
-
-    def seed(self, seed):
-        self.agent.seed(seed)
-
     def get_by_name(self, n):
         r = self.agent.get_by_name(n)
         if n == self._name:
-            r = r + [self]
+            r += [self]
         return r
+
+    def seed(self, seed: int):
+        """Seed the agent
+
+        Args:
+            seed: int: the seed to use
+        """
+        self.agent.seed(seed)
+
+    def serialize(self):
+        """Can only serialize if the wrapped agent is serializable"""
+        if isinstance(self.agent, SerializableAgent):
+            return TemporalAgent(self.agent.serialize(), name=self._name)
+        else:
+            return TemporalAgent(None, name=self._name)
+
+
+class EpisodesDone(TimeAgent, SerializableAgent):
+    """
+    If stopped is encountered at time t, then stopped=True for all timeteps t'>=t
+    It allows to simulate a single episode agent based on an autoreset agent
+    """
+
+    def __init__(self, in_var="env/stopped", out_var="env/stopped"):
+        super().__init__()
+        self.in_var = in_var
+        self.out_var = out_var
+
+    def forward(self, t, **kwargs):
+        d = self.get((self.in_var, t))
+        if t == 0:
+            self.state = torch.zeros_like(d).bool()
+        self.state = torch.logical_or(self.state, d)
+        self.set((self.out_var, t), self.state)

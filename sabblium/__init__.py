@@ -7,7 +7,8 @@
 # LICENSE file in the root directory of this source tree.
 #
 
-from .agent import Agent, TAgent
+from .agent import Agent, TimeAgent, SerializableAgent
+from .agents.seeding import SeedableAgent
 from .workspace import Workspace
 
 trace_workspace = False

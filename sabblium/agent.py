@@ -8,42 +8,48 @@
 #
 
 import copy
+import pickle
 import time
+from abc import ABC
+
 import torch
 import torch.nn as nn
 
-import sabblium
+
+def load(filename):
+    """Load the agent from a file
+
+    Args:
+        filename (str): The filename to use
+    """
+    try:
+        with open(filename, 'rb') as f:
+            return pickle.load(f)
+    except Exception as e:
+        raise Exception("Could not load agent from file {filename} because of {e}".format(filename=filename, e=e))
 
 
-class Agent(nn.Module):
+class Agent(nn.Module, ABC):
     """An `Agent` is a `torch.nn.Module` that reads and writes into a `sabblium.Workspace`"""
 
-    def __init__(self, name: str = None):
+    def __init__(self, name: str = None, *args, **kwargs):
         """To create a new Agent
 
         Args:
             name ([type], optional): An agent can have a name that will allow to perform operations on agents that are composed into more complex agents.
         """
-        super().__init__()
+        super().__init__(*args, **kwargs)
         self.workspace = None
         self._name = name
         self.__trace_file = None
 
-    def seed(self, seed: int):
-        """Provide a seed to this agent. Useful is the agent is stochastic.
-
-        Args:
-            seed (str): [description]
-        """
-        pass
-
-    def set_name(self, n):
+    def set_name(self, name):
         """Set the name of this agent
 
         Args:
-            n (str): The name
+            name (str): The name
         """
-        self._name = n
+        self._name = name
 
     def get_name(self):
         """Get the name of the agent
@@ -63,16 +69,14 @@ class Agent(nn.Module):
         Args:
             workspace (sabblium.Workspace): the workspace on which the agent operates.
         """
-        assert (
-            workspace is not None
-        ), "[Agent.__call__] workspace must not be None"
+        assert workspace is not None, "[{}.__call__] workspace must not be None".format(self.__name__)
         self.workspace = workspace
         self.forward(**kwargs)
         self.workspace = None
 
     def forward(self, **kwargs):
         """The generic function to override when defining a new agent"""
-        raise NotImplementedError
+        raise NotImplementedError('Your agent must override forward')
 
     def clone(self):
         """Create a clone of the agent
@@ -87,7 +91,8 @@ class Agent(nn.Module):
         """Returns the value of a particular variable in the agent workspace
 
         Args:
-            index (str or tuple(str,int)): if str, returns the variable workspace[str]. If tuple(var_name,t), returns workspace[var_name] at time t
+            index (str or tuple(str,int)): if str, returns the variable workspace[str].
+            If tuple(var_name,t), returns workspace[var_name] at time t
         """
         if self.__trace_file is not None:
             t = time.time()
@@ -139,11 +144,48 @@ class Agent(nn.Module):
         return []
 
 
-class TAgent(Agent):
+class TimeAgent(Agent, ABC):
     """
     `TAgent` is used as a convention to represent agents that
     use a time index in their `__call__` function (not mandatory)
     """
 
-    def forward(self, t, **kwargs):
-        raise NotImplementedError
+    def __init__(self, *args, **kwargs):
+        super().__init__(*args, **kwargs)
+
+    def forward(self, t, *args, **kwargs):
+        raise NotImplementedError('Your TAgent must override forward with a time index')
+
+
+class SerializableAgent(Agent, ABC):
+    """
+    `SerializableAgent` is used as a convention to represent agents that are serializable (not mandatory)
+    You should override the serialize method to return a dict of the parameters of the agent
+    You don't have to take care of the nn.Module parameters
+    """
+
+    def __init__(self, *args, **kwargs):
+        super().__init__(*args, **kwargs)
+
+    def serialize(self):
+        """
+        Return the agent without the unsersializable attributes
+        """
+        try:
+            return self
+        except Exception as e:
+            raise Exception("Could not serialize your {c} SerializableAgent because of {e}\n"
+                            "You have to override the serialize method".format(c=self.__class__.__name__, e=e))
+
+    def save(self, filename):
+        """Save the agent to a file
+
+        Args:
+            filename (str): The filename to use
+        """
+        try:
+            with open(filename, 'wb') as f:
+                pickle.dump(self.serialize(), f, pickle.DEFAULT_PROTOCOL)
+        except Exception as e:
+            raise Exception("Could not save agent to file {filename} because of {e}"
+                            "Make sure to have properly overriden the serialize method.".format(filename=filename, e=e))

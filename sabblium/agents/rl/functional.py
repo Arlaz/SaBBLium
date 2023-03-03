@@ -24,9 +24,8 @@ def cumulated_reward(reward, done):
     done = done.detach().clone()
 
     v_done, index_done = done.float().max(0)
-    assert v_done.eq(
-        1.0
-    ).all(), "[agents.rl.functional.cumulated_reward] Computing cumulated reward over unfinished trajectories."
+    assert v_done.eq(1.0).all(), (
+        "[agents.rl.functional.cumulated_reward] Computing cumulated reward over unfinished trajectories.")
     arange = torch.arange(T, device=done.device).unsqueeze(-1).repeat(1, B)
     index_done = index_done.unsqueeze(0).repeat(T, 1)
 
@@ -36,24 +35,19 @@ def cumulated_reward(reward, done):
 
 
 def temporal_difference(critic, reward, must_bootstrap, discount_factor):
-    target = (
-        discount_factor * critic[1:].detach() * must_bootstrap.float()
-        + reward[1:]
-    )
+    target = discount_factor * critic[1:].detach() * must_bootstrap.float() + reward[1:]
     td = target - critic[:-1]
     to_add = torch.zeros(1, td.size()[1]).to(td.device)
     td = torch.cat([td, to_add], dim=0)
     return td
 
 
-def doubleqlearning_temporal_difference(
-    q, action, q_target, reward, must_bootstrap, discount_factor
-):
+def doubleqlearning_temporal_difference(q, action, q_target, reward, must_bootstrap, discount_factor):
     action_max = q.max(-1)[1]
     q_target_max = _index(q_target, action_max).detach()[1:]
 
     mb = must_bootstrap.float()
-    target = reward[1:] + discount_factor * q_target_max * mb
+    target = reward[1:] + discount_factor*q_target_max*mb
 
     q = _index(q, action)[:-1]
     td = target - q
@@ -80,9 +74,7 @@ def gae(critic, reward, must_bootstrap, discount_factor, gae_coef):
     return gaes
 
 
-def compute_reinforce_loss(
-    reward, action_probabilities, baseline, action, done, discount_factor
-):
+def compute_reinforce_loss(reward, action_probabilities, baseline, action, done, discount_factor):
     batch_size = reward.size()[1]
 
     # Find the first occurrence of done for each element in the batch
@@ -97,28 +89,20 @@ def compute_reinforce_loss(
     action = action[:max_trajectories_length]
 
     # Create a binary mask to mask useless values (of size max_trajectories_length x batch_size)
-    arange = (
-        torch.arange(max_trajectories_length, device=done.device)
-        .unsqueeze(-1)
-        .repeat(1, batch_size)
-    )
-    mask = arange.lt(
-        trajectories_length.unsqueeze(0).repeat(max_trajectories_length, 1)
-    )
+    arange = torch.arange(max_trajectories_length, device=done.device).unsqueeze(-1).repeat(1, batch_size)
+    mask = arange.lt(trajectories_length.unsqueeze(0).repeat(max_trajectories_length, 1))
     reward = reward * mask
 
     # Compute discounted cumulated reward
     cumulated_reward = [torch.zeros_like(reward[-1])]
     for t in range(max_trajectories_length - 1, 0, -1):
-        cumulated_reward.append(
-            discount_factor + cumulated_reward[-1] + reward[t]
-        )
+        cumulated_reward.append(discount_factor + cumulated_reward[-1] + reward[t])
     cumulated_reward.reverse()
     cumulated_reward = torch.cat([c.unsqueeze(0) for c in cumulated_reward])
 
     # baseline loss
     g = baseline - cumulated_reward
-    baseline_loss = g**2
+    baseline_loss = g ** 2
     baseline_loss = (baseline_loss * mask).mean()
 
     # policy loss
@@ -128,9 +112,7 @@ def compute_reinforce_loss(
     policy_loss = policy_loss.mean()
 
     # entropy loss
-    entropy = (
-        torch.distributions.Categorical(action_probabilities).entropy() * mask
-    )
+    entropy = torch.distributions.Categorical(action_probabilities).entropy() * mask
     entropy_loss = entropy.mean()
 
     return {
@@ -160,10 +142,7 @@ def compute_critic_loss(cfg, reward, must_bootstrap, q_values, action):
 
     # To get the max of Q(s_{t+1}, a), we take max_q[1:]
     # The same about must_bootstrap.
-    target = (
-        reward[:-1]
-        + cfg.algorithm.discount_factor * max_q[1:] * must_bootstrap[1:].int()
-    )
+    target = reward[:-1] + cfg.algorithm.discount_factor * max_q[1:] * must_bootstrap[1:].int()
 
     # To get Q(s,a), we use torch.gather along the 3rd dimension (the action)
     qvals = q_values.gather(2, action.unsqueeze(-1)).squeeze(-1)
@@ -172,7 +151,7 @@ def compute_critic_loss(cfg, reward, must_bootstrap, q_values, action):
     td = (target - qvals[:-1]) * must_bootstrap[:-1].int()
 
     # Compute critic loss
-    td_error = td**2
+    td_error = td ** 2
     critic_loss = td_error.mean()
     # print(critic_loss)
     return critic_loss
@@ -180,6 +159,4 @@ def compute_critic_loss(cfg, reward, must_bootstrap, q_values, action):
 
 def soft_update_params(net, target_net, tau):
     for param, target_param in zip(net.parameters(), target_net.parameters()):
-        target_param.data.copy_(
-            tau * param.data + (1 - tau) * target_param.data
-        )
+        target_param.data.copy_(tau * param.data + (1-tau) * target_param.data)

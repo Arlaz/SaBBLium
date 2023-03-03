@@ -8,4 +8,8 @@
 #
 
 from .dataloader import DataLoaderAgent, ShuffledDatasetAgent
+from .seeding import (SeedableAgent,
+                      SeedableAgentLast,
+                      SeedableAgentMean,
+                      SeedableAgentSum)
 from .utils import Agents, CopyTAgent, PrintAgent, TemporalAgent
