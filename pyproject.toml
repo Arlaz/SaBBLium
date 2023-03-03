@@ -33,11 +33,15 @@ classifiers = [
 dependencies = [
     "torchvision",
     "gymnasium",
+    "hydra-core"
 ]
 
 [project.optional-dependencies]
+logger = ["tensorboard", "wandb", "pandas", "tqdm"]
 plot = ["matplotlib", "seaborn"]
-format = ["black", "isort"]
+format = ["yapf"]
+all = ["tensorboard", "wandb", "pandas", "tqdm", "matplotlib", "seaborn", "yapf"]
+
 
 [project.urls]
 repository = "https://github.com/Arlaz/SaBBLium"
