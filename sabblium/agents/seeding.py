@@ -21,7 +21,7 @@ class SeedableAgent(Agent, ABC):
         super().__init__(*args, **kwargs)
         self._seed = None
 
-    def seed(self, seed: int):
+    def seed(self, seed: int) -> None:
         """Provide a seed to this agent. Useful is the agent is stochastic.
 
         Args:
@@ -31,15 +31,18 @@ class SeedableAgent(Agent, ABC):
             raise Exception(
                 "Your {self} agent is already seeded with {seed}. You cannot seed it again with {new_seed}\n"
                 "If you want to seed it again, une one of SAgentLast, SAgentMean, SAgentSum".format(
-                    self=self.__class__.__name__, seed=self._seed, new_seed=seed))
+                    self=self.__class__.__name__,
+                    seed=self._seed,
+                    new_seed=seed,
+                )
+            )
         self._seed = seed
 
 
 class SeedableAgentLast(SeedableAgent, ABC):
     """
     `SeedableAgentLast` is used as a convention to represent agents that
-    are seeded (not mandatory) and that use the last seed provided.
-    """
+    are seeded (not mandatory) and that use the last seed provided."""
 
     def __init__(self, *args, **kwargs):
         super().__init__(*args, **kwargs)
@@ -63,7 +66,7 @@ class SeedableAgentSum(SeedableAgent, ABC):
         super().__init__(*args, **kwargs)
         self._seeds = []
 
-    def seed(self, seed: int):
+    def seed(self, seed: int) -> None:
         """Provide a seed to this agent. Useful is the agent is stochastic.
 
         Args:

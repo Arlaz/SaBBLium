@@ -9,231 +9,26 @@
 
 from __future__ import annotations
 
-from typing import List, Optional, Tuple
+from typing import Dict, List, Optional, Tuple, Union
 
 import numpy as np
 import torch
+
+from ._tensors import (
+    CompactTemporalTensor,
+    SlicedTemporalTensor,
+    TemporalTensor,
+)
 
 """ This module provides different ways to store tensors that are more flexible than the torch.Tensor class
 It also defines the `Workspace` as a dictionary of tensors.
 """
 
 
-class SlicedTemporalTensor:
-    """A `SlicedTemporalTensor` represents a tensor of size (T × B × …) by using a list of tensors of size (B × …)
-    The interest is that this tensor automatically adapts its timestep dimension
-    and does not need to have a predefined size.
-    """
-
-    def __init__(self):
-        """Initialize an empty tensor"""
-        self.tensors: list[torch.Tensor] = []
-        self.size: torch.Size = None
-        self.device: torch.device = None
-        self.dtype: torch.dtype = None
-
-    def set(
-        self,
-        t: int,
-        value: torch.Tensor,
-        batch_dims: Optional[Tuple[int, int]],
-    ):
-        """Set a value of size (B × …) at time t"""
-        assert batch_dims is None, "Unable to use batch dimensions with SlicedTemporalTensor"
-        if self.size is None:
-            self.size = value.size()
-            self.device = value.device
-            self.dtype = value.dtype
-        assert self.size == value.size(), "Incompatible size"
-        assert self.device == value.device, "Incompatible device"
-        assert self.dtype == value.dtype, "Incompatible type"
-        while len(self.tensors) <= t:
-            self.tensors.append(torch.zeros(*self.size, device=self.device, dtype=self.dtype))
-        self.tensors[t] = value
-
-    def to(self, device: torch.device):
-        """Move the tensor to a specific device"""
-        s = SlicedTemporalTensor()
-        for k in range(len(self.tensors)):
-            s.set(k, self.tensors[k].to(device), batch_dims=None)
-        return s
-
-    def get(self, t: int, batch_dims: Optional[Tuple[int, int]]):
-        """Get the value of the tensor at time t"""
-
-        assert batch_dims is None, "Unable to use batch dimensions with SlicedTemporalTensor"
-        assert t < len(self.tensors), "Temporal index out of bouds"
-        return self.tensors[t]
-
-    def get_full(self, batch_dims):
-        """Returns the complete tensor of size (T × B × …)"""
-
-        assert batch_dims is None, "Unable to use batch dimensions with SlicedTemporalTensor"
-        return torch.cat([a.unsqueeze(0) for a in self.tensors], dim=0)
-
-    def get_time_truncated(
-        self,
-        from_time: int,
-        to_time: int,
-        batch_dims: Optional[Tuple[int, int]],
-    ):
-        """Returns tensor[from_time:to_time]"""
-        assert 0 <= from_time < to_time and to_time >= 0
-        assert batch_dims is None
-        return torch.cat(
-            [self.tensors[k].unsqueeze(0) for k in range(from_time, min(len(self.tensors), to_time))],
-            dim=0,
-        )
-
-    def set_full(self, value: torch.Tensor, batch_dims: Optional[Tuple[int, int]]):
-        """Set the tensor given a (T × B × …) value tensor.
-        The input tensor is cut into slices that are stored in a list of tensors
-        """
-        assert batch_dims is None, "Unable to use batch dimensions with SlicedTemporalTensor"
-        for t in range(value.size()[0]):
-            self.set(t, value[t], batch_dims=batch_dims)
-
-    def time_size(self):
-        """
-        Return the size of the time dimension
-        """
-        return len(self.tensors)
-
-    def batch_size(self):
-        """Return the size of the batch dimension"""
-        return self.tensors[0].size()[0]
-
-    def select_batch(self, batch_indexes: torch.LongTensor):
-        """Return the tensor where the batch dimension has been selected by the index"""
-        var = SlicedTemporalTensor()
-        for t, v in enumerate(self.tensors):
-            batch_indexes = batch_indexes.to(v.device)
-            var.set(t, v[batch_indexes], None)
-        return var
-
-    def clear(self):
-        """Clear the tensor"""
-        self.tensors = []
-        self.size = None
-        self.device = None
-        self.dtype = None
-
-    def copy_time(self, from_time: int, to_time: int, n_steps: int):
-        """Copy temporal slices of the tensor from from_time:from_time+n_steps to to_time:to_time+n_steps"""
-        for t in range(n_steps):
-            v = self.get(from_time + t, batch_dims=None)
-            self.set(to_time + t, v, batch_dims=None)
-
-    def subtime(self, from_t: int, to_t: int):
-        """
-        Return tensor[from_t:to_t]
-
-        """
-        return CompactTemporalTensor(torch.cat([a.unsqueeze(0) for a in self.tensors[from_t:to_t]], dim=0))
-
-    def zero_grad(self):
-        """Clear any gradient information in the tensor"""
-        self.tensors = [v.detach() for v in self.tensors]
-
-
-class CompactTemporalTensor:
-    """
-    A `CompactTemporalTensor` is a tensor of size (T × B × …)
-    It behaves like the `SlicedTemporalTensor` but has a fixed size that cannot change.
-    It is faster than the `SlicedTemporalTensor`.
-    """
-
-    def __init__(self, value: torch.Tensor = None):
-        self.size = None
-        self.device = None
-        self.dtype = None
-        self.tensor = None
-        if value is not None:
-            self.tensor = value
-            self.device = value.device
-            self.size = value.size()
-            self.dtype = value.dtype
-
-    def set(self, t, value, batch_dims):
-        assert False
-        assert self.tensor is not None, "Tensor must be initialized"
-        assert self.size[1:] == value.size(), "Incompatible size"
-        assert self.device == value.device, "Incompatible device"
-        assert self.dtype == value.dtype, "Incompatible type"
-        assert t < self.tensor.size()[0], "Temporal index out of bounds"
-        if batch_dims is None:
-            self.tensor[t] = value
-        else:
-            self.tensor[t, batch_dims[0]:batch_dims[1]] = value
-
-    def select_batch(self, batch_indexes):
-        v = CompactTemporalTensor(self.tensor[:, batch_indexes])
-        return v
-
-    def to_sliced(self) -> SlicedTemporalTensor:
-        """Transform the tensor to a `SlicedTemporalTensor`"""
-        v = SlicedTemporalTensor()
-        for t in range(self.tensor.size()[0]):
-            v.set(t, self.tensor[t], None)
-        return v
-
-    def to(self, device):
-        if device == self.tensor.device:
-            return self
-        t = self.tensor.to(device)
-        return CompactTemporalTensor(t)
-
-    def get(self, t, batch_dims):
-        assert t < self.tensor.size()[0], "Temporal index out of bounds"
-        if batch_dims is None:
-            return self.tensor[t]
-        else:
-            return self.tensor[t, batch_dims[0]:batch_dims[1]]
-
-    def get_full(self, batch_dims):
-        if batch_dims is None:
-            return self.tensor
-        else:
-            return self.tensor[:, batch_dims[0]:batch_dims[1]]
-
-    def time_size(self):
-        return self.tensor.size()[0]
-
-    def batch_size(self):
-        return self.tensor.size()[1]
-
-    def set_full(self, value, batch_dims):
-        if self.tensor is None:
-            assert batch_dims is None
-            self.size = value.size()
-            self.dtype = value.dtype
-            self.device = value.device
-        if batch_dims is None:
-            self.tensor = value
-        else:
-            self.tensor[:, batch_dims[0]:batch_dims[1]] = value
-
-    def subtime(self, from_t, to_t):
-        return CompactTemporalTensor(self.tensor[from_t:to_t])
-
-    def clear(self):
-        self.size = None
-        self.device = None
-        self.dtype = None
-        self.tensor = None
-
-    def copy_time(self, from_time, to_time, n_steps):
-        self.tensor[to_time:to_time + n_steps] = self.tensor[from_time:from_time + n_steps]
-
-    def zero_grad(self):
-        self.tensor = self.tensor.detach()
-
-
 class Workspace:
     """
     Workspace is the most important class in `SaBBLium`.
-    It corresponds to a collection of tensors :
-    (`SlicedTemporalTensor`, `CompactTemporalTensor`).
+    It corresponds to a collection of WorkspaceTensors.:
 
     In the most cases, we consider that all the tensors have the same time and batch sizes
     (but it is not mandatory for most of the functions)
@@ -246,18 +41,23 @@ class Workspace:
         Args:
             workspace (Workspace, optional): If specified, it creates a copy of the workspace (where tensors are cloned as CompactTemporalTensors)
         """
-        self.variables = {}
+        self.variables: Dict[str, TemporalTensor] = {}
         if workspace is not None:
             for k in workspace.keys():
                 self.set_full(k, workspace[k].clone())
 
+    def __len__(self):
+        return len(self.variables)
+
     @staticmethod
-    def take_per_row_strided(A, index, num_elem=2):
+    def take_per_row_strided(
+        tensor: torch.Tensor, index: torch.Tensor, num_elem: int = 2
+    ) -> torch.Tensor:
         # TODO: Optimize this function
-        all_index = index
-        arange = torch.arange(A.size()[1], device=A.device)
+        assert index.dtype in [torch.short, torch.int, torch.long]
+        arange = torch.arange(tensor.size()[1], device=tensor.device)
         return torch.cat(
-            [A[all_index + t, arange].unsqueeze(0) for t in range(num_elem)],
+            [tensor[index + t, arange].unsqueeze(0) for t in range(num_elem)],
             dim=0,
         )
 
@@ -271,9 +71,14 @@ class Workspace:
         """Set the variable var_name at time t"""
         if var_name not in self.variables:
             self.variables[var_name] = SlicedTemporalTensor()
-        elif isinstance(self.variables[var_name], CompactTemporalTensor):
+        elif isinstance(self.variables[var_name], TemporalTensor):
             self.variables[var_name] = self.variables[var_name].to_sliced()
-
+        else:
+            raise NotImplementedError(
+                "Cannot set a variable at time {} that is not a TemporalTensor".format(
+                    t
+                )
+            )
         self.variables[var_name].set(t, v, batch_dims=batch_dims)
 
     def get(
@@ -286,7 +91,7 @@ class Workspace:
         assert var_name in self.variables, "Unknown variable '" + var_name + "'"
         return self.variables[var_name].get(t, batch_dims=batch_dims)
 
-    def clear(self, name=None):
+    def clear(self, name: Optional[str] = None):
         """Remove all the variables from the workspace"""
         if name is None:
             for k, v in self.variables.items():
@@ -317,24 +122,35 @@ class Workspace:
             self.variables[var_name] = CompactTemporalTensor()
         self.variables[var_name].set_full(value, batch_dims=batch_dims)
 
-    def get_full(self, var_name: str, batch_dims: Optional[Tuple[int, int]] = None) -> torch.Tensor:
+    def get_full(
+        self, var_name: str, batch_dims: Optional[Tuple[int, int]] = None
+    ) -> torch.Tensor:
         """Return the complete tensor for var_name"""
-        assert var_name in self.variables, "[Workspace.get_full] unknown variable '" + var_name + "'"
+        assert var_name in self.variables, (
+            "[Workspace.get_full] unknown variable '" + var_name + "'"
+        )
         return self.variables[var_name].get_full(batch_dims=batch_dims)
 
     def keys(self):
         """Return an iterator over the variables names"""
         return self.variables.keys()
 
-    def __getitem__(self, key):
+    def __getitem__(
+        self, key: Union[str, List[str, ...], Tuple[str, ...]]
+    ) -> Union[torch.Tensor, Tuple[torch.Tensor, ...], List[torch.Tensor, ...]]:
         """
         If key is a string, then it returns a `torch.Tensor`.
-        If key is a list of string, it returns a tuple of `torch.Tensor`.
+        If key is a list of string, it returns a list of `torch.Tensor`.
+        If key is a tuple of string, it returns a tuple of `torch.Tensor`.
         """
         if isinstance(key, str):
             return self.get_full(key)
+        elif isinstance(key, list):
+            return list(self.get_full(k) for k in key)
+        elif isinstance(key, tuple):
+            return tuple(self.get_full(k) for k in key)
         else:
-            return (self.get_full(k) for k in key)
+            raise ValueError("Invalid key type")
 
     def _all_variables_same_time_size(self) -> bool:
         """Check that all variables have the same time size"""
@@ -364,7 +180,7 @@ class Workspace:
             assert _bs == v.batch_size(), "Variables must have the same batch size"
         return _bs
 
-    def select_batch(self, batch_indexes: torch.LongTensor) -> Workspace:
+    def select_batch(self, batch_indexes: torch.Tensor) -> Workspace:
         """Given a tensor of indexes, it returns a new workspace with the select elements (over the batch dimension)"""
         _bs = None
         for k, v in self.variables.items():
@@ -374,13 +190,12 @@ class Workspace:
 
         workspace = Workspace()
         for k, v in self.variables.items():
-            v = v.select_batch(batch_indexes)
-            workspace.variables[k] = v
+            workspace.variables[k] = v.select_batch(batch_indexes)
         return workspace
 
-    def select_batch_n(self, n):
+    def select_batch_n(self, n: int):
         """Return a new Workspace of batch_size n by randomly sampling over the batch dimension"""
-        who = torch.randint(low=0, high=self.batch_size(), size=(n, ))
+        who = torch.randint(low=0, high=self.batch_size(), size=(n,))
         return self.select_batch(who)
 
     def copy_time(
@@ -454,7 +269,7 @@ class Workspace:
             if var_names is None or k in var_names:
                 self.copy_time(_ts - n, 0, n)
 
-    def zero_grad(self):
+    def zero_grad(self) -> None:
         """Remove any gradient information"""
         for k, v in self.variables.items():
             v.zero_grad()
@@ -470,7 +285,9 @@ class Workspace:
         """
         Return a workspace restricted to a subset of the time dimension
         """
-        assert self._all_variables_same_time_size(), "All variables must have the same time size"
+        assert (
+            self._all_variables_same_time_size()
+        ), "All variables must have the same time size"
         workspace = Workspace()
         for k, v in self.variables.items():
             workspace.variables[k] = v.subtime(from_t, to_t)
@@ -483,7 +300,14 @@ class Workspace:
     def __str__(self):
         r = ["Workspace:"]
         for k, v in self.variables.items():
-            r.append("\t" + k + ": time_size = " + str(v.time_size()) + ", batch_size = " + str(v.batch_size()))
+            r.append(
+                "\t"
+                + k
+                + ": time_size = "
+                + str(v.time_size())
+                + ", batch_size = "
+                + str(v.batch_size())
+            )
         return "\n".join(r)
 
     def select_subtime(self, t: torch.LongTensor, window_size: int) -> Workspace:
@@ -492,14 +316,27 @@ class Workspace:
         Then the function returns a new workspace by aggregating `window_size` timesteps starting from index `t`
         This method allows to sample multiple windows in the Workspace.
         Note that the function may be quite slow.
+
+        Args:
+             t ([torch.Tensor]): a batch_size tensor of int time positions
+             window_size ([type]): the output time size
         """
+
+        assert t.dtype in [torch.short, torch.int, torch.long]
         _vars = {k: v.get_full(batch_dims=None) for k, v in self.variables.items()}
         workspace = Workspace()
         for k, v in _vars.items():
-            workspace.set_full(k, self.take_per_row_strided(v, t, num_elem=window_size))
+            workspace.set_full(
+                var_name=k,
+                value=self.take_per_row_strided(
+                    tensor=v, index=t, num_elem=window_size
+                ),
+            )
         return workspace
 
-    def sample_subworkspace(self, n_times, n_batch_elements, n_timesteps):
+    def sample_subworkspace(
+        self, n_times: int, n_batch_elements: int, n_timesteps: int
+    ) -> Workspace:
         """
         Sample a workspace from the  workspace. The process is the following:
                 * Let us consider that workspace batch_size is B and time_size is T
@@ -510,26 +347,26 @@ class Workspace:
                 * We concatenate all the workspaces collected (over the batch dimension)
 
         Args:
-            n_times ([type]): The number of sub workspaces to sample (and concatenate)
-            n_batch_elements ([type]): <=workspace.batch_size() : the number of batch elements to sample for each sub workspace
-            n_timesteps ([type]): <=workspace.time_size() : the number of timesteps to keep
+            n_times ([int]): The number of sub workspaces to sample (and concatenate)
+            n_batch_elements ([int]): <=workspace.batch_size() : the number of batch elements to sample for each sub workspace
+            n_timesteps ([int]): <=workspace.time_size() : the number of timesteps to keep
 
         Returns:
             [Workspace]: The resulting workspace
         """
-        B = self.batch_size()
-        T = self.time_size()
-        to_aggregate = []
+        batch_size: int = self.batch_size()
+        time_size: int = self.time_size()
+        to_aggregate: List[Workspace] = []
         for _ in range(n_times):
-            assert not n_timesteps > T
-            mini_workspace = self
-            if n_timesteps < T:
-                t = np.random.randint(T - n_timesteps)
+            assert not n_timesteps > time_size
+            mini_workspace: Workspace = self
+            if n_timesteps < time_size:
+                t = np.random.randint(time_size - n_timesteps)
                 mini_workspace = self.subtime(t, t + n_timesteps)
 
             # Batch sampling
-            if n_batch_elements < B:
-                idx_envs = torch.randperm(B)[:n_batch_elements]
+            if n_batch_elements < batch_size:
+                idx_envs = torch.randperm(batch_size)[:n_batch_elements]
                 mini_workspace = mini_workspace.select_batch(idx_envs)
             to_aggregate.append(mini_workspace)
 
@@ -568,13 +405,13 @@ class Workspace:
         """
 
         transitions = {}
-        terminated = self["env/terminated"][:-1]
+        stopped = self["env/stopped"][:-1]
         for key in self.keys():
             array = self[key]
 
             # remove transitions (s_terminal -> s_initial)
-            x = array[:-1][~terminated]
-            x_next = array[1:][~terminated]
+            x = array[:-1][~stopped]
+            x_next = array[1:][~stopped]
             transitions[key] = torch.stack([x, x_next])
 
         workspace = Workspace()

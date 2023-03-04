@@ -14,6 +14,7 @@ from typing import *
 
 import numpy as np
 import pandas as pd
+import torch
 import wandb
 from omegaconf import DictConfig
 from torch.utils.tensorboard import SummaryWriter
@@ -21,10 +22,9 @@ from tqdm import tqdm
 
 
 class TFPrefixLogger:
-
-    def __init__(self, prefix, logger):
+    def __init__(self, prefix: str, logger):
         self.logger = logger
-        self.prefix = prefix
+        self.prefix: str = prefix
 
     def add_images(self, name, value, iteration):
         self.logger.add_images(self.prefix + name, value, iteration)
@@ -56,29 +56,31 @@ class TFLogger(SummaryWriter):
 
     def __init__(
         self,
-        log_dir=None,
+        log_dir: str = "./",
         hps={},
-        cache_size=10000,
-        every_n_seconds=None,
-        modulo=1,
-        verbose=False,
-        use_zip=True,
-        save_tensorboard=True,
+        cache_size: int = 10000,
+        every_n_seconds: Optional[int] = None,
+        modulo: int = 1,
+        verbose: bool = False,
+        use_zip: bool = True,
+        save_tensorboard: bool = True,
     ):
         SummaryWriter.__init__(self, log_dir=log_dir)
-        self.save_tensorboard = save_tensorboard
-        self.use_zip = use_zip
+        self.save_tensorboard: bool = save_tensorboard
+        self.use_zip: bool = use_zip
         self.save_every = cache_size
-        self.modulo = modulo
+        self.modulo: int = modulo
         self.written_values = {}
-        self.log_dir = log_dir
-        self.every_n_seconds = every_n_seconds
+        self.log_dir: str = log_dir
+        self.every_n_seconds: int = every_n_seconds
         if self.every_n_seconds is None:
-            print("[Deprecated] sabblium.logger: use 'every_n_seconds' instead of cache_size")
+            print(
+                "[Deprecated] sabblium.logger: use 'every_n_seconds' instead of cache_size"
+            )
         else:
             self.save_every = None
         self._start_time = time.time()
-        self.verbose = verbose
+        self.verbose: bool = verbose
 
         self.picklename = log_dir + "/db.pickle.bzip2"
         if not self.use_zip:
@@ -105,7 +107,7 @@ class TFLogger(SummaryWriter):
 
     def _to_dict(self, h):
         r = {}
-        if isinstance(h, dict):
+        if isinstance(h, Dict):
             return {k: self._to_dict(v) for k, v in h.items()}
         if isinstance(h, DictConfig):
             return {k: self._to_dict(v) for k, v in h.items()}
@@ -129,14 +131,14 @@ class TFLogger(SummaryWriter):
         return TFPrefixLogger(prefix, self)
 
     @staticmethod
-    def message(msg, from_name=""):
+    def message(msg: str, from_name: str = ""):
         print("[", from_name, "]: ", msg)
 
     @staticmethod
-    def debug(msg, from_name=""):
+    def debug(msg: str, from_name: str = ""):
         print("[DEBUG] [", from_name, "]: ", msg)
 
-    def _to_pickle(self, name, value, iteration):
+    def _to_pickle(self, name: str, value, iteration):
         self.to_pickle.append((name, iteration, value))
 
         if self.every_n_seconds is not None:
@@ -174,7 +176,7 @@ class TFLogger(SummaryWriter):
         if self.save_tensorboard:
             SummaryWriter.add_images(self, name, value, iteration)
 
-    def add_figure(self, name, value, iteration):
+    def add_figure(self, name: str, value, iteration: int):
         iteration = int(iteration / self.modulo) * self.modulo
         if (name, iteration) in self.written_values:
             return
@@ -185,7 +187,7 @@ class TFLogger(SummaryWriter):
         if self.save_tensorboard:
             SummaryWriter.add_figure(self, name, value, iteration)
 
-    def add_scalar(self, name, value, iteration):
+    def add_scalar(self, name: str, value: Union[int, float], iteration: int):
         iteration = int(iteration / self.modulo) * self.modulo
         if (name, iteration) in self.written_values:
             return
@@ -200,7 +202,7 @@ class TFLogger(SummaryWriter):
             if self.save_tensorboard:
                 SummaryWriter.add_scalar(self, name, value, iteration)
 
-    def add_video(self, name, value, iteration, fps=10):
+    def add_video(self, name: str, value: torch.Tensor, iteration: int, fps=10):
         iteration = int(iteration / self.modulo) * self.modulo
         if (name, iteration) in self.written_values:
             return
@@ -292,7 +294,9 @@ class WandbLogger:
             self.logs[name] = value
             self.logs[iteration_name] = iteration
             t = time.time()
-            if ((t - self.save_time) > self.every_n_seconds) or ("evaluation/iteration" in self.logs):
+            if ((t - self.save_time) > self.every_n_seconds) or (
+                "evaluation/iteration" in self.logs
+            ):
                 wandb.log(self.logs, commit=True)
                 self.save_time = t
                 self.logs = {}
@@ -309,7 +313,6 @@ class WandbLogger:
 
 
 class Log:
-
     def __init__(self, hps, values):
         self.hps = hps
         self.values = values
@@ -319,7 +322,7 @@ class Log:
                 values[k].append(None)
         self.length = max_length
 
-    def to_xy(self, name):
+    def to_xy(self, name: str):
         assert name in self.values
         x, y = [], []
         for k, v in enumerate(self.values[name]):
@@ -343,17 +346,17 @@ class Log:
                 _pd["_hp/" + k] = self.hps[k]
         return _pd
 
-    def get_at(self, name, iteration):
+    def get_at(self, name: str, iteration: int):
         return self.values[name][iteration]
 
-    def get(self, name, keep_none=False):
+    def get(self, name: str, keep_none: bool = False):
         v = self.values[name]
         if not keep_none:
             return [k for k in v if k is not None]
         else:
             return v
 
-    def replace_None_(self, name):
+    def replace_None_(self, name: str):
         v = self.values[name]
         last_v = None
         first_v = None
@@ -373,17 +376,17 @@ class Log:
             p += 1
         self.values[name] = r
 
-    def max(self, name):
+    def max(self, name: str):
         v = self.values[name]
         vv = [k for k in v if k is not None]
         return np.max(vv)
 
-    def min(self, name):
+    def min(self, name: str):
         v = self.values[name]
         vv = [k for k in v if k is not None]
         return np.min(vv)
 
-    def argmin(self, name):
+    def argmin(self, name: str):
         v = self.values[name]
         vv = [k for k in v if k is not None]
         _max = np.max(vv)
@@ -395,7 +398,7 @@ class Log:
                 vv.append(v[k])
         return np.argmin(vv)
 
-    def argmax(self, name):
+    def argmax(self, name: str):
         v = self.values[name]
         vv = [k for k in v if k is not None]
         _min = np.min(vv)
@@ -409,11 +412,10 @@ class Log:
 
 
 class Logs:
-
     def __init__(self):
-        self.logs = []
+        self.logs: List = []
         self.hp_names = None
-        self.filenames = []
+        self.filenames: List = []
 
     def _add(self, log):
         self.hp_names = {k: True for k in log.hps}
@@ -424,7 +426,7 @@ class Logs:
 
         self.logs.append(log)
 
-    def add(self, logs):
+    def add(self, logs: Union[Log, List[Log], Tuple[Log], "Logs"]):
         if isinstance(logs, Log):
             self._add(logs)
         else:
@@ -458,7 +460,7 @@ class Logs:
                     logs.add(l)
         return logs
 
-    def unique_hps(self, name):
+    def unique_hps(self, name: str):
         r = {}
         for l in self.logs:
             v = l.hps[name]
@@ -495,7 +497,7 @@ def flattify(d):
     return r
 
 
-def read_log(directory, use_bz2=True, debug=False):
+def read_log(directory: str, use_bz2: bool = True, debug: bool = False):
     # print("== Read ", directory)
     # if os.path.exists(directory+"/fast.pickle"):
     #     f=open(directory+"/fast.pickle","rb")
@@ -522,7 +524,11 @@ def read_log(directory, use_bz2=True, debug=False):
                         print(name, value, type(value))
                     if isinstance(value, np.int64):
                         value = int(value)
-                    if isinstance(value, int) or isinstance(value, float) or isinstance(value, str):
+                    if (
+                        isinstance(value, int)
+                        or isinstance(value, float)
+                        or isinstance(value, str)
+                    ):
                         if name not in values:
                             values[name] = []
                         while len(values[name]) < iteration + 1:
@@ -544,14 +550,18 @@ def read_log(directory, use_bz2=True, debug=False):
     return log
 
 
-def get_directories(directory, use_bz2=True):
+def get_directories(directory: str, use_bz2: bool = True):
     import os.path
 
     name = "db.pickle"
     if use_bz2:
         name = "db.pickle.bzip2"
 
-    return [dir_path for dir_path, dir_names, filenames in os.walk(directory) if name in filenames]
+    return [
+        dir_path
+        for dir_path, dir_names, filenames in os.walk(directory)
+        if name in filenames
+    ]
 
 
 def read_directories(directories, use_bz2=True):
@@ -591,7 +601,9 @@ def _create_col(df, hps, _name):
     return pd.concat(vs)
 
 
-def plot_dataframe(df, y, x="iteration", hue=None, style=None, row=None, col=None, kind="line"):
+def plot_dataframe(
+    df, y, x="iteration", hue=None, style=None, row=None, col=None, kind="line"
+):
     """
     Plot a dataframe using seaborn
     """
