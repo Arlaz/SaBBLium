@@ -8,10 +8,13 @@ multi-agent RL, etc...), but also in a supervised/unsupervised learning settings
 (for instance for NLP, Computer Vision, etc...).
 It is derived from [`SaLinA`](https://github.com/facebookresearch/salina)  and [`BBRL`](https://github.com/osigaud/bbrl)
 * It allows to write very complex sequential models (or policies) in few lines
-* main difference with `BBRL` and `SaLinA` is that `SaBBLium` is compatible with `gymnasium`:
-  * No more `NoAutoResetGymAgent` or `AutoResetGymAgent` just a `GymAgent` that can be used in both cases depending on wether the `gymnasium` environment contains an `AutoResetWrapper` or not.
+* main difference with `BBRL` and `SaLinA` is that `SaBBLium` is compatible with `Gymnasium`:
+  * No more `NoAutoResetGymAgent` or `AutoResetGymAgent` just a `GymAgent` that can be used in both cases depending on wether the `Gymnasium` environment contains an `AutoResetWrapper` or not.
   * You should now use `env/stopped` instead of `env/done` as a stop variable
-  * No multiprocessing / no remote agent or workspace yet
+* No multiprocessing / no remote agent or workspace yet
+* You can easily save and load your models with `agent.save` and `Agent.load` by making them inherit from `SerializableAgent`, if they are not serializable, you have to override the `serialize` method.
+* An ImageGymAgent has been added with adapted serialization
+* Many typos have been fixed and type hints have been added
 
 ## Citing `SaBBLium`
 `SaBBLium` being inspired from [`SaLinA`](https://github.com/facebookresearch/salina), please use this bibtex if you want to cite `SaBBLium` in your publications:
@@ -52,7 +55,7 @@ Link to the paper: [SaLinA: Sequential Learning of Agents](https://arxiv.org/abs
 
 ## Dependencies
 
-`SaBBLium` utilizes [`PyTorch`](https://github.com/pytorch/pytorch), [`Hydra`](https://github.com/facebookresearch/hydra) for configuring experiments, and [`gymnasium`](https://github.com/Farama-Foundation/Gymnasium) for reinforcement learning environments.
+`SaBBLium` utilizes [`PyTorch`](https://github.com/pytorch/pytorch), [`Hydra`](https://github.com/facebookresearch/hydra) for configuring experiments, and [`Gymnasium`](https://github.com/Farama-Foundation/Gymnasium) for reinforcement learning environments.
 
 ## Note on the logger
 
