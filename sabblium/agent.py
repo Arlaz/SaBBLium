@@ -12,6 +12,8 @@ import pickle
 import time
 from abc import ABC
 from typing import Any, List, Optional, Tuple, Union
+
+from torch import Tensor
 from typing.io import IO
 
 import torch
@@ -82,7 +84,7 @@ class Agent(nn.Module, ABC):
         self.zero_grad()
         return copy.deepcopy(self)
 
-    def get(self, index: Union[str, Tuple[str, int]]) -> torch.Tensor:
+    def get(self, index: Union[str, Tuple[str, int]]) -> Tensor:
         """Returns the value of a particular variable in the agent workspace
 
         Args:
@@ -107,13 +109,11 @@ class Agent(nn.Module, ABC):
                 "index must be either str or tuple(str, int)".format(self.__name__)
             )
 
-    def get_time_truncated(
-        self, var_name: str, from_time: int, to_time: int
-    ) -> torch.Tensor:
+    def get_time_truncated(self, var_name: str, from_time: int, to_time: int) -> Tensor:
         """Return a variable truncated between from_time and to_time"""
         return self.workspace.get_time_truncated(var_name, from_time, to_time)
 
-    def set(self, index: Union[str, Tuple[str, int]], value: torch.Tensor) -> None:
+    def set(self, index: Union[str, Tuple[str, int]], value: Tensor) -> None:
         """Write a variable in the workspace
 
         Args:

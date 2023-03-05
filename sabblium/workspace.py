@@ -9,10 +9,11 @@
 
 from __future__ import annotations
 
-from typing import Dict, List, Optional, Tuple, Union
+from typing import Dict, Generator, Iterable, List, Optional, Tuple, Union
 
 import numpy as np
 import torch
+from torch import Tensor
 
 from ._tensors import (
     CompactTemporalTensor,
@@ -51,8 +52,8 @@ class Workspace:
 
     @staticmethod
     def take_per_row_strided(
-        tensor: torch.Tensor, index: torch.Tensor, num_elem: int = 2
-    ) -> torch.Tensor:
+        tensor: Tensor, index: Tensor, num_elem: int = 2
+    ) -> Tensor:
         # TODO: Optimize this function
         assert index.dtype in [torch.short, torch.int, torch.long]
         arange = torch.arange(tensor.size()[1], device=tensor.device)
@@ -65,7 +66,7 @@ class Workspace:
         self,
         var_name: str,
         t: int,
-        v: torch.Tensor,
+        v: Tensor,
         batch_dims: Optional[Tuple[int, int]] = None,
     ):
         """Set the variable var_name at time t"""
@@ -86,7 +87,7 @@ class Workspace:
         var_name: str,
         t: int,
         batch_dims: Optional[Tuple[int, int]] = None,
-    ) -> torch.Tensor:
+    ) -> Tensor:
         """Get the variable var_name at time t"""
         assert var_name in self.variables, "Unknown variable '" + var_name + "'"
         return self.variables[var_name].get(t, batch_dims=batch_dims)
@@ -111,7 +112,7 @@ class Workspace:
     def set_full(
         self,
         var_name: str,
-        value: torch.Tensor,
+        value: Tensor,
         batch_dims: Optional[Tuple[int, int]] = None,
     ):
         """
@@ -124,7 +125,7 @@ class Workspace:
 
     def get_full(
         self, var_name: str, batch_dims: Optional[Tuple[int, int]] = None
-    ) -> torch.Tensor:
+    ) -> Tensor:
         """Return the complete tensor for var_name"""
         assert var_name in self.variables, (
             "[Workspace.get_full] unknown variable '" + var_name + "'"
@@ -136,19 +137,16 @@ class Workspace:
         return self.variables.keys()
 
     def __getitem__(
-        self, key: Union[str, List[str, ...], Tuple[str, ...]]
-    ) -> Union[torch.Tensor, Tuple[torch.Tensor, ...], List[torch.Tensor, ...]]:
+        self, key: Union[str, Iterable[str]]
+    ) -> Union[Tensor, Generator[Tensor]]:
         """
         If key is a string, then it returns a `torch.Tensor`.
-        If key is a list of string, it returns a list of `torch.Tensor`.
-        If key is a tuple of string, it returns a tuple of `torch.Tensor`.
+        If key is a list or tuple of string, it returns a tuple of `torch.Tensor`.
         """
         if isinstance(key, str):
             return self.get_full(key)
-        elif isinstance(key, list):
-            return list(self.get_full(k) for k in key)
-        elif isinstance(key, tuple):
-            return tuple(self.get_full(k) for k in key)
+        elif isinstance(key, Iterable):
+            return (self.get_full(k) for k in key)
         else:
             raise ValueError("Invalid key type")
 
@@ -180,7 +178,7 @@ class Workspace:
             assert _bs == v.batch_size(), "Variables must have the same batch size"
         return _bs
 
-    def select_batch(self, batch_indexes: torch.Tensor) -> Workspace:
+    def select_batch(self, batch_indexes: Tensor) -> Workspace:
         """Given a tensor of indexes, it returns a new workspace with the select elements (over the batch dimension)"""
         _bs = None
         for k, v in self.variables.items():
@@ -219,7 +217,7 @@ class Workspace:
         from_time: int,
         to_time: int,
         batch_dims: Optional[Tuple[int, int]] = None,
-    ) -> torch.Tensor:
+    ) -> Tensor:
         """Return workspace[var_name][from_time:to_time]"""
         assert 0 <= from_time < to_time and to_time >= 0
 

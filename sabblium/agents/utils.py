@@ -11,6 +11,7 @@ from typing import Any, Iterable, List, Optional
 
 import torch
 import torch.nn as nn
+from torch import Tensor
 
 from sabblium import Agent, TimeAgent, SerializableAgent
 from sabblium.agents.seeding import SeedableAgent
@@ -73,9 +74,11 @@ class Agents(SeedableAgent, SerializableAgent):
         Warning: the agents are serialized only if they inherit from `SerializableAgent`
         """
         serializable_agents = [
-            a.serialize()
-            if isinstance(a, SerializableAgent)
-            else (a.__class__.__name__, a.get_name())
+            (
+                a.serialize()
+                if isinstance(a, SerializableAgent)
+                else (a.__class__.__name__, a.get_name())
+            )
             for a in self.agents
         ]
         return Agents(*serializable_agents, name=self._name)
@@ -180,7 +183,7 @@ class TemporalAgent(TimeAgent, SeedableAgent, SerializableAgent):
         while True:
             self.agent(workspace, t=_t, **kwargs)
             if stop_variable is not None:
-                s: torch.Tensor = workspace.get(stop_variable, _t)
+                s: Tensor = workspace.get(stop_variable, _t)
                 if s.all():
                     break
             _t += 1
@@ -205,7 +208,7 @@ class TemporalAgent(TimeAgent, SeedableAgent, SerializableAgent):
     def serialize(self):
         """Can only serialize if the wrapped agent is serializable"""
         if isinstance(self.agent, SerializableAgent):
-            return TemporalAgent(self.agent.serialize(), name=self._name)
+            return TemporalAgent(agent=self.agent.serialize(), name=self._name)
         else:
             temp = copy.deepcopy(self)
             temp.agent = None
@@ -220,12 +223,12 @@ class EpisodesStopped(TimeAgent, SerializableAgent):
 
     def __init__(self, in_var: str = "env/stopped", out_var: str = "env/stopped"):
         super().__init__()
-        self.state: Optional[torch.Tensor] = None
+        self.state: Optional[Tensor] = None
         self.in_var: str = in_var
         self.out_var: str = out_var
 
     def forward(self, t: int, **kwargs):
-        d: torch.Tensor = self.get((self.in_var, t))
+        d: Tensor = self.get((self.in_var, t))
         if t == 0:
             self.state = torch.zeros_like(d).bool()
         self.state = torch.logical_or(self.state, d)

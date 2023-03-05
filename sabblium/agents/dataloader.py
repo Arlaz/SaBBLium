@@ -10,6 +10,7 @@ from typing import Tuple
 
 import torch
 from gymnasium.utils import seeding
+from torch import Tensor
 from torch.utils import data
 
 from sabblium import Agent
@@ -48,7 +49,7 @@ class ShuffledDatasetAgent(Agent):
             x = self.dataset[idx]
             xs = []
             for xx in x:
-                if isinstance(xx, torch.Tensor):
+                if isinstance(xx, Tensor):
                     xs.append(xx.unsqueeze(0))
                 else:
                     xs.append(torch.tensor(xx).unsqueeze(0))

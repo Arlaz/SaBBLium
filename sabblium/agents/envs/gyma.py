@@ -66,7 +66,7 @@ def _format_frame(frame) -> Union[torch.Tensor, Dict[str, torch.Tensor]]:
 
 
 def _torch_type(d: Dict[str, torch.Tensor]) -> Dict[str, torch.Tensor]:
-    return {k: d[k].float() if not torch.is_floating_point(d[k]) else d[k] for k in d}
+    return {k: d[k].float() if torch.is_floating_point(d[k]) else d[k] for k in d}
 
 
 def _torch_cat_dict(d: List[Dict[str, torch.Tensor]]) -> Dict[str, torch.Tensor]:
@@ -82,6 +82,7 @@ class GymAgent(TimeAgent, SeedableAgent, SerializableAgent):
     """
 
     default_seed = 0
+    max_eposide_steps_replacement = 1000000
 
     def __init__(
         self,
@@ -155,7 +156,16 @@ class GymAgent(TimeAgent, SeedableAgent, SerializableAgent):
         env: gymnasium.Env = self.envs[k]
         self.cumulated_reward[k] = 0.0
 
-        s: int = self._max_episode_steps * self.n_envs * self._nb_reset * self._seed
+        s: int = (
+            (
+                self._max_episode_steps
+                if self._max_episode_steps is not None
+                else self.max_eposide_steps_replacement
+            )
+            * self.n_envs
+            * self._nb_reset
+            * self._seed
+        )
         s += (k + 1) * (self._timestep[k].item() + 1 if self._is_autoreset else 1)
         o, info = env.reset(seed=s)
         observation: Union[torch.Tensor, Dict[str, torch.Tensor]] = _format_frame(o)
@@ -276,20 +286,11 @@ class ImageGymAgent(GymAgent, SerializableAgent):
     GymAgent compatible with image observations
     """
 
-    def __init__(self, keep_image_data: bool = False, *args, **kwargs):
+    def __init__(self, *args, **kwargs):
         super().__init__(*args, **kwargs)
-        self.keep_image_data: bool = keep_image_data
 
     def serialize(self):
         """Return a serializable GymAgent without the environments"""
-        if self.keep_image_data:
-            for rendered_env in self.envs:
-                unw_rendered_env: gymnasium.Env = rendered_env.unwrapped
-                unw_rendered_env.screen = None
-                unw_rendered_env.clock = None
-                unw_rendered_env.surf = None
-
-        else:
-            state = copy.deepcopy(self)
-            state.envs = None
-            return state
+        copied_agent = copy.copy(self)
+        copied_agent.envs = None
+        return copied_agent
