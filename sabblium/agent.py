@@ -136,7 +136,7 @@ class Agent(nn.Module, ABC):
         if isinstance(index, str):
             self.workspace.set_full(index, value)
         elif isinstance(index, tuple):
-            self.workspace.set(index[0], index[1], value)
+            self.workspace.set(var_name=index[0], t=index[1], v=value)
         else:
             raise TypeError(
                 "index must be either str or tuple(str, int)".format(self.__name__)

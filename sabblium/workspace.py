@@ -80,7 +80,7 @@ class Workspace:
                     t
                 )
             )
-        self.variables[var_name].set(t, v, batch_dims=batch_dims)
+        self.variables[var_name].set(t=t, value=v, batch_dims=batch_dims)
 
     def get(
         self,
@@ -106,7 +106,7 @@ class Workspace:
         """Generates a workspace where all tensors are stored in the Compact format."""
         workspace = Workspace()
         for k in self.keys():
-            workspace.set_full(k, self.get_full(k))
+            workspace.set_full(var_name=k, value=self.get_full(k))
         return workspace
 
     def set_full(
@@ -121,7 +121,7 @@ class Workspace:
         """
         if var_name not in self.variables:
             self.variables[var_name] = CompactTemporalTensor()
-        self.variables[var_name].set_full(value, batch_dims=batch_dims)
+        self.variables[var_name].set_full(value=value, batch_dims=batch_dims)
 
     def get_full(
         self, var_name: str, batch_dims: Optional[Tuple[int, int]] = None
