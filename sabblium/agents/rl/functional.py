@@ -145,30 +145,35 @@ def compute_critic_loss(cfg, reward, must_bootstrap, q_values, action):
         action (torch.LongTensor): a (T) long tensor containing the chosen action
 
     Returns:
-        torch.Scalar: The DQN loss
+        torch.Scalar: The DQN loss and the temporal difference
     """
 
-    # We compute the max of Q-values over all actions
-    max_q = q_values.max(2)[0].detach()
-
-    # To get the max of Q(s_{t+1}, a), we take max_q[1:]
-    # The same about must_bootstrap.
-    target = (
-        reward[:-1]
-        + cfg.algorithm.discount_factor * max_q[1:] * must_bootstrap[1:].int()
-    )
-
-    # To get Q(s,a), we use torch.gather along the 3rd dimension (the action)
-    qvals = q_values.gather(2, action.unsqueeze(-1)).squeeze(-1)
-
-    # Compute the temporal difference (use must_boostrap as to mask out finished episodes)
-    td = (target - qvals[:-1]) * must_bootstrap[:-1].int()
+    # We check if we have transitions or not
+    if len(reward.size()) == 2:
+        # We compute the max of Q-values over all actions
+        max_q = q_values.max(-1)[0].detach()
+        target = reward[:-1] + cfg.algorithm.discount_factor * max_q * must_bootstrap.int()
+        # To get Q(s,a), we use torch.gather along the 3rd dimension (the action)
+        act = action[0].unsqueeze(-1)
+        qvals = q_values[0].gather(dim=1, index=act).squeeze()
+        # Compute the temporal difference
+        td = target - qvals
+    else:
+        # We compute the max of Q-values over all actions
+        max_q = q_values.max(2)[0].detach()
+        # To get the max of Q(s_{t+1}, a), we take max_q[1:]
+        # The same about must_bootstrap.
+        target = reward[:-1] + cfg.algorithm.discount_factor * max_q[1:] * must_bootstrap[1:].int()
+        # To get Q(s,a), we use torch.gather along the 3rd dimension (the action)
+        act = action.unsqueeze(-1)
+        qvals = q_values.gather(dim=2, index=act).squeeze(-1)
+        # Compute the temporal difference (use must_boostrap as to mask out finished episodes)
+        td = (target - qvals[:-1]) * must_bootstrap[:-1].int()
 
     # Compute critic loss
     td_error = td**2
     critic_loss = td_error.mean()
-    # print(critic_loss)
-    return critic_loss
+    return critic_loss, td
 
 
 def soft_update_params(net, target_net, tau):

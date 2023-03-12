@@ -403,7 +403,7 @@ class Workspace:
         """
 
         transitions = {}
-        stopped = self["env/stopped"][:-1]
+        stopped = torch.logical_or(self["env/terminated"][:-1], self["env/truncated"][:-1])
         for key in self.keys():
             array = self[key]
 
