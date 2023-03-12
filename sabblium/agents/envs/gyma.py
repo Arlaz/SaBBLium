@@ -111,7 +111,7 @@ class GymAgent(TimeAgent, SeedableAgent, SerializableAgent, ABC):
         self.output: str = output_string
         self._max_episode_steps: Optional[int] = max_episode_steps
         self._timestep_from_reset: int = 0
-        self._nb_reset: int = 0
+        self._nb_reset: int = 1
 
         self.observation_space: Optional[Space[ObsType]] = None
         self.action_space: Optional[Space[ActType]] = None
@@ -329,7 +329,8 @@ class VecGymAgent(GymAgent):
         super().forward(t, **kwargs)
 
         if t == 0:
-            obs, infos = self.envs.reset(seed=self._seed)
+            s: int = self._seed * self._nb_reset
+            obs, infos = self.envs.reset(seed=s)
             termination = torch.tensor([False] * self.envs.num_envs)
             truncation = torch.tensor([False] * self.envs.num_envs)
             rewards = torch.tensor([0.0] * self.envs.num_envs)

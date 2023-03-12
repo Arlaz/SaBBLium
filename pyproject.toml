@@ -39,8 +39,8 @@ dependencies = [
 [project.optional-dependencies]
 logger = ["tensorboard", "wandb", "pandas", "tqdm"]
 plot = ["matplotlib", "seaborn"]
-format = ["yapf"]
-all = ["tensorboard", "wandb", "pandas", "tqdm", "matplotlib", "seaborn", "yapf"]
+format = ["black", "pre-commit"]
+all = ["tensorboard", "wandb", "pandas", "tqdm", "matplotlib", "seaborn", "black"]
 
 
 [project.urls]
