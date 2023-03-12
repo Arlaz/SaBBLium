@@ -28,7 +28,7 @@ from torch import nn, Tensor
 from sabblium import SeedableAgent, SerializableAgent, TimeAgent
 
 
-def _convert_action(action: Tensor) -> Union[int, np.ndarray[int]]:
+def _convert_action(action: Tensor) -> Union[int, np.ndarray]:
     if len(action.size()) == 0:
         action = action.item()
         assert isinstance(action, int)
