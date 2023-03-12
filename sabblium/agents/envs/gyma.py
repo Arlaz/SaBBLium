@@ -12,11 +12,8 @@ from typing import (
     Any,
     Callable,
     Dict,
-    Iterable,
     List,
     Optional,
-    OrderedDict,
-    Sequence,
     Union,
 )
 
@@ -24,7 +21,7 @@ import numpy as np
 import torch
 from gymnasium import Env, Space
 from gymnasium.core import ActType, ObsType
-from gymnasium.vector import AsyncVectorEnv, SyncVectorEnv, VectorEnv
+from gymnasium.vector import VectorEnv
 from gymnasium.wrappers import AutoResetWrapper
 from torch import nn, Tensor
 
@@ -92,14 +89,12 @@ def _torch_cat_dict(d: List[Dict[str, Tensor]]) -> Dict[str, Tensor]:
 
 
 class GymAgent(TimeAgent, SeedableAgent, SerializableAgent, ABC):
-    default_seed = 0
-    max_episode_steps_replacement = 1000000
+    default_seed = 42
 
     def __init__(
         self,
         input_string: str = "action",
         output_string: str = "env/",
-        max_episode_steps: Optional[int] = None,
         *args,
         **kwargs,
     ):
@@ -109,7 +104,6 @@ class GymAgent(TimeAgent, SeedableAgent, SerializableAgent, ABC):
 
         self.input: str = input_string
         self.output: str = output_string
-        self._max_episode_steps: Optional[int] = max_episode_steps
         self._timestep_from_reset: int = 0
         self._nb_reset: int = 1
 
@@ -117,8 +111,10 @@ class GymAgent(TimeAgent, SeedableAgent, SerializableAgent, ABC):
         self.action_space: Optional[Space[ActType]] = None
 
     def forward(self, t: int, *args, **kwargs) -> None:
+        if self._seed is None:
+            self.seed(self.default_seed)
         if t == 0:
-            self._timestep_from_reset = 0
+            self._timestep_from_reset = 1
             self._nb_reset += 1
         else:
             self._timestep_from_reset += 1
@@ -205,17 +201,10 @@ class ParallelGymAgent(GymAgent):
         env: Env = self.envs[k]
         self.cumulated_reward[k] = 0.0
 
-        s: int = (
-            (
-                self._max_episode_steps
-                if self._max_episode_steps is not None
-                else self.max_episode_steps_replacement
-            )
-            * self.num_envs
-            * self._nb_reset
-            * self._seed
-        )
+        s: int = self._timestep_from_reset * self.num_envs * self._nb_reset * self._seed
+
         s += (k + 1) * (self._timestep[k].item() + 1 if self._is_autoreset else 1)
+
         o, info = env.reset(seed=s)
         observation: Union[Tensor, Dict[str, Tensor]] = _format_frame(o)
 
@@ -234,7 +223,6 @@ class ParallelGymAgent(GymAgent):
             **observation,
             "terminated": torch.tensor([False]),
             "truncated": torch.tensor([False]),
-            "stopped": torch.tensor([False]),
             "reward": torch.tensor([0.0]).float(),
             "cumulated_reward": torch.tensor([self.cumulated_reward[k]]),
             "timestep": torch.tensor([self._timestep[k]]),
@@ -262,19 +250,10 @@ class ParallelGymAgent(GymAgent):
 
         self._timestep[k] += 1
 
-        if terminated or truncated:
-            self._timestep[k] = 0
-
-        if self._is_autoreset:
-            stopped = self._timestep_from_reset + 1 >= self._max_episode_steps
-        else:
-            stopped = terminated or truncated
-
         ret: Dict[str, Tensor] = {
             **observation,
             "terminated": torch.tensor([terminated]),
             "truncated": torch.tensor([truncated]),
-            "stopped": torch.tensor([stopped]),
             "reward": torch.tensor([reward]).float(),
             "cumulated_reward": torch.tensor([self.cumulated_reward[k]]),
             "timestep": torch.tensor([self._timestep[k]]),
@@ -291,8 +270,6 @@ class ParallelGymAgent(GymAgent):
 
         observations = []
         if t == 0:
-            if self._seed is None:
-                self.seed(self.default_seed)
             for k, env in enumerate(self.envs):
                 observations.append(self._reset(k))
         else:
@@ -300,7 +277,7 @@ class ParallelGymAgent(GymAgent):
             assert action.size()[0] == self.num_envs, "Incompatible number of envs"
 
             for k, env in enumerate(self.envs):
-                if self._is_autoreset or not self._last_frame[k]["stopped"]:
+                if self._is_autoreset or not self._last_frame[k]["terminated"]:
                     observations.append(self._step(k, action[k]))
                 else:
                     observations.append(self._last_frame[k])
@@ -335,7 +312,6 @@ class VecGymAgent(GymAgent):
             truncation = torch.tensor([False] * self.envs.num_envs)
             rewards = torch.tensor([0.0] * self.envs.num_envs)
             self.cumulated_reward = torch.zeros(self.envs.num_envs)
-            stopped = False
         else:
             action = self.get((self.input, t - 1))
             assert (
@@ -349,7 +325,6 @@ class VecGymAgent(GymAgent):
             termination = torch.tensor(termination)
             truncation = torch.tensor(truncation)
             self.cumulated_reward = self.cumulated_reward + rewards
-            stopped = self._timestep_from_reset + 1 >= self._max_episode_steps
 
         observation: Union[Tensor, Dict[str, Tensor]] = _format_frame(obs)
 
@@ -360,7 +335,6 @@ class VecGymAgent(GymAgent):
             "env_obs": observation.squeeze(0),
             "terminated": termination,
             "truncated": truncation,
-            "stopped": torch.tensor([stopped]),
             "reward": rewards,
             "cumulated_reward": self.cumulated_reward,
         }
