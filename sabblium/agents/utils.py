@@ -1,13 +1,14 @@
-# coding=utf-8
+#  SaBBLium ― A Python library for building and simulating multi-agent systems.
 #
-# Copyright © Facebook, Inc. and its affiliates.
-# Copyright © Sorbonne University
+#  Copyright © Facebook, Inc. and its affiliates.
+#  Copyright © Sorbonne University.
 #
-# This source code is licensed under the MIT license found in the
-# LICENSE file in the root directory of this source tree.
+#  This source code is licensed under the MIT license found in the
+#  LICENSE file in the root directory of this source tree.
 #
+
 import copy
-from typing import Any, Iterable, List, Optional
+from typing import Any, Iterable
 
 import torch
 import torch.nn as nn
@@ -19,25 +20,27 @@ from sabblium.workspace import Workspace
 
 
 class Agents(SeedableAgent, SerializableAgent):
-    """An agent that contains multiple agents executed sequentially.
+    """An agent that contains multiple agents executed
+
     Warnings:
-        * the agents are executed in the order they are added to the agent.
+        * the agents are executed in the order they are added to the agent if no seed is provided
         * the agents are serialized only if they inherit from `SerializableAgent`
-        * the agents are seeded only if they inherit from `SeedableAgent`, with the same seed provided
 
     Args:
         Agent ([sabblium.Agent]): The agents
     """
 
     def __init__(
-        self, *agents: [Optional[Iterable[Agent]]], name: Optional[str] = None, **kwargs
+        self,
+        *agents: [Iterable[Agent] | None],
+        **kwargs,
     ):
         """Creates the agent from multiple agents
 
         Args:
             name ([str], optional): [name of the resulting agent]. Default to None.
         """
-        super().__init__(name=name, **kwargs)
+        super().__init__(**kwargs)
         for a in agents:
             assert isinstance(a, Agent)
         self.agents: nn.ModuleList[Agent] = nn.ModuleList(agents)
@@ -45,29 +48,20 @@ class Agents(SeedableAgent, SerializableAgent):
     def __getitem__(self, k: int) -> Agent:
         return self.agents[k]
 
-    def __call__(self, workspace: Workspace, **kwargs) -> List[Any]:
+    def __call__(self, workspace: Workspace, **kwargs) -> list[Any]:
+        # TODO: call depends on the seed
         return [a(workspace, **kwargs) for a in self.agents]
 
-    def forward(self, **kwargs) -> List[Any]:
+    def forward(self, **kwargs) -> list[Any]:
         pass
 
-    def get_by_name(self, n):
+    def get_by_name(self, n) -> list[Agent]:
         r = []
         for a in self.agents:
             r += a.get_by_name(n)
         if n == self._name:
             r += [self]
         return r
-
-    def seed(self, seed: int):
-        """Seed the agents
-        Warning: the agents are seeded  with the same seed and only if they inherit from `SeedableAgent`
-        Args:
-            seed (int): the seed to use
-        """
-        for a in self.agents:
-            if isinstance(a, SeedableAgent):
-                a.seed(seed)
 
     def serialize(self):
         """Serialize the agents
@@ -81,7 +75,7 @@ class Agents(SeedableAgent, SerializableAgent):
             )
             for a in self.agents
         ]
-        return Agents(*serializable_agents, name=self._name)
+        return Agents(*serializable_agents, name=self._name, seed=self._seed)
 
 
 class CopyTemporalAgent(SerializableAgent):
@@ -98,14 +92,14 @@ class CopyTemporalAgent(SerializableAgent):
         input_name: str,
         output_name: str,
         detach: bool = False,
-        name: Optional[str] = None,
+        name: str | None = None,
     ):
         super().__init__(name=name)
         self.input_name: str = input_name
         self.output_name: str = output_name
         self.detach: bool = detach
 
-    def forward(self, t: Optional[int] = None, **kwargs):
+    def forward(self, t: int | None = None, **kwargs):
         """
         Args:
             t ([type], optional): if not None, copy at time t else whole tensor. Defaults to None.
@@ -127,17 +121,15 @@ class CopyTemporalAgent(SerializableAgent):
 class PrintAgent(SerializableAgent):
     """An agent to generate print in the console (mainly for debugging)"""
 
-    def __init__(
-        self, *names: Optional[Iterable[Optional[str]]], name: Optional[str] = None
-    ):
+    def __init__(self, *names: Iterable[str | None] | None, **kwargs):
         """
         Args:
             names ([str], optional): The variables to print
         """
-        super().__init__(name=name)
-        self.names: Optional[Iterable[Optional[str]]] = names
+        super().__init__(**kwargs)
+        self.names: Iterable[str | None] | None = names
 
-    def forward(self, t: Optional[int], **kwargs):
+    def forward(self, t: int | None, **kwargs):
         if self.names is None:
             self.names = self.workspace.keys()
         for n in self.names:
@@ -148,25 +140,25 @@ class PrintAgent(SerializableAgent):
                     print(n, " = ", self.get((n, t)))
 
 
-class TemporalAgent(TimeAgent, SeedableAgent, SerializableAgent):
+class TemporalAgent(TimeAgent, SerializableAgent):
     """Execute one Agent over multiple timestamps"""
 
-    def __init__(self, agent: Agent, name=None):
+    def __init__(self, agent: Agent, **kwargs):
         """The agent to transform to a temporal agent
 
         Args:
             agent ([sabblium.Agent]): The agent to encapsulate
             name ([str], optional): Name of the agent
         """
-        super().__init__(name=name)
+        super().__init__(**kwargs)
         self.agent: Agent = agent
 
     def __call__(
         self,
         workspace: Workspace,
         t: int = 0,
-        n_steps: Optional[int] = None,
-        stop_variable: Optional[str] = None,
+        n_steps: int | None = None,
+        stop_variable: str | None = None,
         **kwargs,
     ):
         """Execute the agent starting at time t, for n_steps
@@ -191,19 +183,14 @@ class TemporalAgent(TimeAgent, SeedableAgent, SerializableAgent):
                 if _t >= t + n_steps:
                     break
 
-    def get_by_name(self, n: str):
+    def forward(self, t: int, **kwargs) -> Any:
+        pass
+
+    def get_by_name(self, n: str) -> list[Agent]:
         r = self.agent.get_by_name(n)
         if n == self._name:
             r += [self]
         return r
-
-    def seed(self, seed: int):
-        """Seed the agent
-
-        Args:
-            seed: int: the seed to use
-        """
-        self.agent.seed(seed)
 
     def serialize(self):
         """Can only serialize if the wrapped agent is serializable"""
@@ -221,9 +208,11 @@ class EpisodesStopped(TimeAgent, SerializableAgent):
     It allows to simulate a single episode agent based on an autoreset agent
     """
 
-    def __init__(self, in_var: str = "env/stopped", out_var: str = "env/stopped"):
-        super().__init__()
-        self.state: Optional[Tensor] = None
+    def __init__(
+        self, in_var: str = "env/stopped", out_var: str = "env/stopped", **kwargs
+    ):
+        super().__init__(**kwargs)
+        self.state: Tensor | None = None
         self.in_var: str = in_var
         self.out_var: str = out_var
 

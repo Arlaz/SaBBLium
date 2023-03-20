@@ -8,6 +8,7 @@ outputs/
 # misc
 *wandb*
 *.hydra*
+*.ruff_cache*
 /sabblium/_version.py
 
 

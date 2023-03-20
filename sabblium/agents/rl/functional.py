@@ -1,13 +1,14 @@
-# coding=utf-8
+#  SaBBLium ― A Python library for building and simulating multi-agent systems.
 #
-# Copyright © Facebook, Inc. and its affiliates.
-# Copyright © Sorbonne University
+#  Copyright © Facebook, Inc. and its affiliates.
+#  Copyright © Sorbonne University.
 #
-# This source code is licensed under the MIT license found in the
-# LICENSE file in the root directory of this source tree.
+#  This source code is licensed under the MIT license found in the
+#  LICENSE file in the root directory of this source tree.
 #
 
 import torch
+from torch import nn
 
 
 def _index(tensor_3d, tensor_2d):
@@ -59,22 +60,22 @@ def doubleqlearning_temporal_difference(
     return td
 
 
-def gae(critic, reward, must_bootstrap, discount_factor, gae_coef):
+def gae(critic, reward, must_bootstrap, discount_factor, gae_factor):
     mb = must_bootstrap.float()
     td = reward[1:] + discount_factor * mb * critic[1:].detach() - critic[:-1]
     # handling td0 case
-    if gae_coef == 0.0:
+    if gae_factor == 0.0:
         return td
 
     td_shape = td.shape[0]
     gae_val = td[-1]
-    gaes = [gae_val]
+    gae_vals = [gae_val]
     for t in range(td_shape - 2, -1, -1):
-        gae_val = td[t] + discount_factor * gae_coef * mb[:-1][t] * gae_val
-        gaes.append(gae_val)
-    gaes = list([g.unsqueeze(0) for g in reversed(gaes)])
-    gaes = torch.cat(gaes, dim=0)
-    return gaes
+        gae_val = td[t] + discount_factor * gae_factor * mb[:-1][t] * gae_val
+        gae_vals.append(gae_val)
+    gae_vals = list([g.unsqueeze(0) for g in reversed(gae_vals)])
+    gae_vals = torch.cat(gae_vals, dim=0)
+    return gae_vals
 
 
 def compute_reinforce_loss(
@@ -133,47 +134,45 @@ def compute_reinforce_loss(
     }
 
 
-# Compute the temporal difference loss from a dataset to update a critic
-def compute_critic_loss(cfg, reward, must_bootstrap, q_values, action):
-    """_summary_
-
+def compute_critic_loss(discount_factor, reward, must_bootstrap, q_values, action):
+    """Compute critic loss
     Args:
-        cfg (_type_): _description_
-        reward (torch.Tensor): A (T × B) tensor containing the rewards
+        discount_factor (float): The discount factor
+        reward (torch.Tensor): a (T × B) tensor containing the rewards
         must_bootstrap (torch.Tensor): a (T × B) tensor containing 0 if the episode is completed at time $t$
         q_values (torch.Tensor): a (T × B × A) tensor containing Q values
         action (torch.LongTensor): a (T) long tensor containing the chosen action
 
     Returns:
-        torch.Scalar: The DQN loss and the temporal difference
+        torch.Scalar: The loss
     """
 
-    # We check if we have transitions or not
-    if len(reward.size()) == 2:
-        # We compute the max of Q-values over all actions
-        max_q = q_values.max(-1)[0].detach()
-        target = reward[:-1] + cfg.algorithm.discount_factor * max_q * must_bootstrap.int()
-        # To get Q(s,a), we use torch.gather along the 3rd dimension (the action)
-        act = action[0].unsqueeze(-1)
-        qvals = q_values[0].gather(dim=1, index=act).squeeze()
-        # Compute the temporal difference
-        td = target - qvals
-    else:
-        # We compute the max of Q-values over all actions
-        max_q = q_values.max(2)[0].detach()
-        # To get the max of Q(s_{t+1}, a), we take max_q[1:]
-        # The same about must_bootstrap.
-        target = reward[:-1] + cfg.algorithm.discount_factor * max_q[1:] * must_bootstrap[1:].int()
-        # To get Q(s,a), we use torch.gather along the 3rd dimension (the action)
-        act = action.unsqueeze(-1)
-        qvals = q_values.gather(dim=2, index=act).squeeze(-1)
-        # Compute the temporal difference (use must_boostrap as to mask out finished episodes)
-        td = (target - qvals[:-1]) * must_bootstrap[:-1].int()
+    max_q = q_values[1:].amax(dim=-1).detach()
+    target = reward[1:] + discount_factor * max_q * must_bootstrap[1:]
+    act = action.unsqueeze(dim=-1)
+    qvals = q_values.gather(dim=1, index=act).squeeze(dim=1)
+    return nn.MSELoss()(qvals[:-1], target)
 
-    # Compute critic loss
-    td_error = td**2
-    critic_loss = td_error.mean()
-    return critic_loss, td
+
+def compute_critic_loss_transitional(
+    discount_factor, reward, must_bootstrap, q_values, action
+):
+    """Compute critic loss
+    Args:
+        discount_factor (float): The discount factor
+        reward (torch.Tensor): a (2 × T × B) tensor containing the rewards
+        must_bootstrap (torch.Tensor): a (2 × T × B) tensor containing 0 if the episode is completed at time $t$
+        q_values (torch.Tensor): a (2 × T × B × A) tensor containing Q values
+        action (torch.LongTensor): a (2 × T) long tensor containing the chosen action
+
+    Returns:
+        torch.Scalar: The loss
+    """
+    max_q = q_values[1].amax(dim=-1).detach()
+    target = reward[1] + discount_factor * max_q * must_bootstrap[1]
+    act = action[0].unsqueeze(dim=-1)
+    qvals = q_values[0].gather(dim=1, index=act).squeeze(dim=1)
+    return nn.MSELoss()(qvals, target)
 
 
 def soft_update_params(net, target_net, tau):

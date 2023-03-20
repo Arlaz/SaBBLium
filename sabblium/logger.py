@@ -1,22 +1,22 @@
-# coding=utf-8
+#  SaBBLium ― A Python library for building and simulating multi-agent systems.
 #
-# Copyright © Facebook, Inc. and its affiliates.
-# Copyright © Sorbonne University
+#  Copyright © Facebook, Inc. and its affiliates.
+#  Copyright © Sorbonne University.
 #
-# This source code is licensed under the MIT license found in the
-# LICENSE file in the root directory of this source tree.
+#  This source code is licensed under the MIT license found in the
+#  LICENSE file in the root directory of this source tree.
 #
 
 import bz2
 import pickle
 import time
-from typing import *
+from typing import Iterable, Self
 
 import numpy as np
 import pandas as pd
-import torch
 import wandb
 from omegaconf import DictConfig
+from torch import Tensor
 from torch.utils.tensorboard import SummaryWriter
 from tqdm import tqdm
 
@@ -57,9 +57,9 @@ class TFLogger(SummaryWriter):
     def __init__(
         self,
         log_dir: str = "./",
-        hps={},
+        hps: dict | None = None,
         cache_size: int = 10000,
-        every_n_seconds: Optional[int] = None,
+        every_n_seconds: int | None = None,
         modulo: int = 1,
         verbose: bool = False,
         use_zip: bool = True,
@@ -86,7 +86,7 @@ class TFLogger(SummaryWriter):
         if not self.use_zip:
             self.picklename = log_dir + "/db.pickle"
         self.to_pickle = []
-        if len(hps) > 0:
+        if hps is not None and len(hps) > 0:
             f = open(log_dir + "/params.json", "wt")
             f.write(str(hps) + "\n")
             f.close()
@@ -106,8 +106,7 @@ class TFLogger(SummaryWriter):
         return d
 
     def _to_dict(self, h):
-        r = {}
-        if isinstance(h, Dict):
+        if isinstance(h, dict):
             return {k: self._to_dict(v) for k, v in h.items()}
         if isinstance(h, DictConfig):
             return {k: self._to_dict(v) for k, v in h.items()}
@@ -187,7 +186,7 @@ class TFLogger(SummaryWriter):
         if self.save_tensorboard:
             SummaryWriter.add_figure(self, name, value, iteration)
 
-    def add_scalar(self, name: str, value: Union[int, float], iteration: int):
+    def add_scalar(self, name: str, value: int | float, iteration: int):
         iteration = int(iteration / self.modulo) * self.modulo
         if (name, iteration) in self.written_values:
             return
@@ -202,7 +201,7 @@ class TFLogger(SummaryWriter):
             if self.save_tensorboard:
                 SummaryWriter.add_scalar(self, name, value, iteration)
 
-    def add_video(self, name: str, value: torch.Tensor, iteration: int, fps=10):
+    def add_video(self, name: str, value: Tensor, iteration: int, fps=10):
         iteration = int(iteration / self.modulo) * self.modulo
         if (name, iteration) in self.written_values:
             return
@@ -237,9 +236,9 @@ class WandbLogger:
 
     def __init__(
         self,
-        project: Optional[str] = None,
-        group: Optional[str] = None,
-        job_type: Optional[str] = None,
+        project: str | None = None,
+        group: str | None = None,
+        job_type: str | None = None,
         tags: str = "",
         every_n_seconds: bool = None,
         verbose: bool = False,
@@ -258,7 +257,7 @@ class WandbLogger:
         self.verbose = verbose
         self.log_loss = log_loss
 
-    def _to_dict(self, h: Union[dict, DictConfig]) -> dict:
+    def _to_dict(self, h: dict | DictConfig) -> dict:
         if isinstance(h, dict) or isinstance(h, DictConfig):
             return {k: self._to_dict(v) for k, v in h.items()}
         else:
@@ -413,11 +412,11 @@ class Log:
 
 class Logs:
     def __init__(self):
-        self.logs: List = []
+        self.logs: list = []
         self.hp_names = None
-        self.filenames: List = []
+        self.filenames: list = []
 
-    def _add(self, log):
+    def _add(self, log: Log):
         self.hp_names = {k: True for k in log.hps}
         for l in self.logs:
             for k in log.hps:
@@ -426,7 +425,7 @@ class Logs:
 
         self.logs.append(log)
 
-    def add(self, logs: Union[Log, List[Log], Tuple[Log], "Logs"]):
+    def add(self, logs: Log | Iterable[Log] | Self):
         if isinstance(logs, Log):
             self._add(logs)
         else:
@@ -479,8 +478,6 @@ class Logs:
             else:
                 rdf.append(df)
         return pd.concat(rdf)
-
-    # def plot(self, y, x, hue=None, style=None, row=None, col=None, kind="line"):
 
 
 def flattify(d):
@@ -645,7 +642,5 @@ def plot_dataframe(
     if isinstance(hue, list):
         df = _create_col(df, hue, "__hue")
         hue = "__hue"
-
-    # df = convert_iteration_to_steps(df)
 
     sns.relplot(x=x, y=y, hue=hue, style=style, row=row, col=col, data=df, kind=kind)

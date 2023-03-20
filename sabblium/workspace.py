@@ -1,15 +1,15 @@
-# coding=utf-8
+#  SaBBLium ― A Python library for building and simulating multi-agent systems.
 #
-# Copyright © Facebook, Inc. and its affiliates.
-# Copyright © Sorbonne University
+#  Copyright © Facebook, Inc. and its affiliates.
+#  Copyright © Sorbonne University.
 #
-# This source code is licensed under the MIT license found in the
-# LICENSE file in the root directory of this source tree.
+#  This source code is licensed under the MIT license found in the
+#  LICENSE file in the root directory of this source tree.
 #
 
 from __future__ import annotations
 
-from typing import Dict, Generator, Iterable, List, Optional, Tuple, Union
+from typing import Generator, Iterable
 
 import numpy as np
 import torch
@@ -35,14 +35,14 @@ class Workspace:
     (but it is not mandatory for most of the functions)
     """
 
-    def __init__(self, workspace: Optional[Workspace] = None):
+    def __init__(self, workspace: Workspace | None = None):
         """
         Create an empty workspace
 
         Args:
             workspace (Workspace, optional): If specified, it creates a copy of the workspace (where tensors are cloned as CompactTemporalTensors)
         """
-        self.variables: Dict[str, TemporalTensor] = {}
+        self.variables: dict[str, TemporalTensor] = {}
         if workspace is not None:
             for k in workspace.keys():
                 self.set_full(k, workspace[k].clone())
@@ -67,7 +67,7 @@ class Workspace:
         var_name: str,
         t: int,
         v: Tensor,
-        batch_dims: Optional[Tuple[int, int]] = None,
+        batch_dims: tuple[int, int] | None = None,
     ):
         """Set the variable var_name at time t"""
         if var_name not in self.variables:
@@ -86,13 +86,13 @@ class Workspace:
         self,
         var_name: str,
         t: int,
-        batch_dims: Optional[Tuple[int, int]] = None,
+        batch_dims: tuple[int, int] | None = None,
     ) -> Tensor:
         """Get the variable var_name at time t"""
         assert var_name in self.variables, "Unknown variable '" + var_name + "'"
         return self.variables[var_name].get(t, batch_dims=batch_dims)
 
-    def clear(self, name: Optional[str] = None):
+    def clear(self, name: str | None = None):
         """Remove all the variables from the workspace"""
         if name is None:
             for k, v in self.variables.items():
@@ -113,7 +113,7 @@ class Workspace:
         self,
         var_name: str,
         value: Tensor,
-        batch_dims: Optional[Tuple[int, int]] = None,
+        batch_dims: tuple[int, int] | None = None,
     ):
         """
         Set variable var_name with a complete tensor of size (T × B × …)
@@ -124,7 +124,7 @@ class Workspace:
         self.variables[var_name].set_full(value=value, batch_dims=batch_dims)
 
     def get_full(
-        self, var_name: str, batch_dims: Optional[Tuple[int, int]] = None
+        self, var_name: str, batch_dims: tuple[int, int] | None = None
     ) -> Tensor:
         """Return the complete tensor for var_name"""
         assert var_name in self.variables, (
@@ -136,9 +136,7 @@ class Workspace:
         """Return an iterator over the variables names"""
         return self.variables.keys()
 
-    def __getitem__(
-        self, key: Union[str, Iterable[str]]
-    ) -> Union[Tensor, Generator[Tensor]]:
+    def __getitem__(self, key: str | Iterable[str]) -> Tensor | Generator[Tensor]:
         """
         If key is a string, then it returns a `torch.Tensor`.
         If key is a list or tuple of string, it returns a tuple of `torch.Tensor`.
@@ -201,7 +199,7 @@ class Workspace:
         from_time: int,
         to_time: int,
         n_steps: int,
-        var_names: Optional[List[str]] = None,
+        var_names: list[str] | None = None,
     ):
         """
         Copy all the variables values from time `from_time` to `from_time+n_steps` to `to_time` to `to_time+n_steps`.
@@ -216,7 +214,7 @@ class Workspace:
         var_name: str,
         from_time: int,
         to_time: int,
-        batch_dims: Optional[Tuple[int, int]] = None,
+        batch_dims: tuple[int, int] | None = None,
     ) -> Tensor:
         """Return workspace[var_name][from_time:to_time]"""
         assert 0 <= from_time < to_time and to_time >= 0
@@ -235,7 +233,7 @@ class Workspace:
         return workspace
 
     @staticmethod
-    def cat_batch(workspaces: List[Workspace]) -> Workspace:
+    def cat_batch(workspaces: list[Workspace]) -> Workspace:
         """
         Concatenate multiple workspaces over the batch dimension.
         The workspaces must have the same time dimension.
@@ -254,7 +252,7 @@ class Workspace:
             workspace.set_full(k, v)
         return workspace
 
-    def copy_n_last_steps(self, n: int, var_names: Optional[List[str]] = None):
+    def copy_n_last_steps(self, n: int, var_names: list[str] | None = None):
         """Copy the n last timesteps of each variable to the n first timesteps."""
         _ts = None
         for k, v in self.variables.items():
@@ -305,6 +303,8 @@ class Workspace:
                 + str(v.time_size())
                 + ", batch_size = "
                 + str(v.batch_size())
+                + ", shape = "
+                + str(tuple(v.tensor_size()))
             )
         return "\n".join(r)
 
@@ -354,7 +354,7 @@ class Workspace:
         """
         batch_size: int = self.batch_size()
         time_size: int = self.time_size()
-        to_aggregate: List[Workspace] = []
+        to_aggregate: list[Workspace] = []
         for _ in range(n_times):
             assert not n_timesteps > time_size
             mini_workspace: Workspace = self
@@ -374,7 +374,7 @@ class Workspace:
             mini_workspace = to_aggregate[0]
         return mini_workspace
 
-    def get_transitions(self) -> Workspace:
+    def get_transitions(self, filter_key: str) -> Workspace:
         """Return a new workspace containing the transitions of the current workspace.
             Each key of the current workspace have dimensions [n_step, n_env, key_dim]
             {
@@ -403,7 +403,7 @@ class Workspace:
         """
 
         transitions = {}
-        stopped = torch.logical_or(self["env/terminated"][:-1], self["env/truncated"][:-1])
+        stopped = self[filter_key][:-1]
         for key in self.keys():
             array = self[key]
 

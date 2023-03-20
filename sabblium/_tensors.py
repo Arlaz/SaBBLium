@@ -1,23 +1,25 @@
-# coding=utf-8
+#  SaBBLium ― A Python library for building and simulating multi-agent systems.
 #
-# Copyright © Facebook, Inc. and its affiliates.
-# Copyright © Sorbonne University
+#  Copyright © Facebook, Inc. and its affiliates.
+#  Copyright © Sorbonne University.
 #
-# This source code is licensed under the MIT license found in the
-# LICENSE file in the root directory of this source tree.
+#  This source code is licensed under the MIT license found in the
+#  LICENSE file in the root directory of this source tree.
 #
+
 from abc import ABC
-from typing import List, Optional, Tuple
+from typing import Self
 
 import torch
+from torch import Tensor
 
 
 class TemporalTensor(ABC):
-    def __init__(self, *args, **kwargs) -> None:
-        super().__init__(*args, **kwargs)
-        self.size: Optional[torch.Size] = None
-        self.device: Optional[torch.device] = None
-        self.dtype: Optional[torch.dtype] = None
+    def __init__(self, **kwargs) -> None:
+        super().__init__(**kwargs)
+        self.size: torch.Size | None = None
+        self.device: torch.device | None = None
+        self.dtype: torch.dtype | None = None
 
     def clear(self) -> None:
         self.size = None
@@ -33,29 +35,25 @@ class TemporalTensor(ABC):
     def batch_size(self) -> int:
         raise NotImplementedError("batch_size is not implemented")
 
-    def get(self, t: int, batch_dims: Optional[Tuple[int, int]]) -> torch.Tensor:
+    def tensor_size(self) -> torch.Size:
+        raise NotImplementedError("tensor_size is not implemented")
+
+    def get(self, t: int, batch_dims: tuple[int, int] | None) -> Tensor:
         raise NotImplementedError("get is not implemented")
 
-    def get_full(self, batch_dims: Optional[Tuple[int, int]]) -> torch.Tensor:
+    def get_full(self, batch_dims: tuple[int, int] | None) -> Tensor:
         raise NotImplementedError("get_full is not implemented")
 
-    def set(
-        self,
-        t: int,
-        value: torch.Tensor,
-        batch_dims: Optional[Tuple[int, int]],
-    ) -> None:
+    def set(self, t: int, value: Tensor, batch_dims: tuple[int, int] | None) -> None:
         raise NotImplementedError("set is not implemented")
 
-    def set_full(
-        self, value: torch.Tensor, batch_dims: Optional[Tuple[int, int]]
-    ) -> None:
+    def set_full(self, value: Tensor, batch_dims: tuple[int, int] | None) -> None:
         raise NotImplementedError("set_full is not implemented")
 
-    def select_batch(self, batch_indexes: torch.Tensor) -> "TemporalTensor":
+    def select_batch(self, batch_indexes: Tensor) -> Self:
         raise NotImplementedError("select_batch is not implemented")
 
-    def to_sliced(self) -> "SlicedTemporalTensor":
+    def to_sliced(self) -> Self:
         if isinstance(self, SlicedTemporalTensor):
             return self
         else:
@@ -67,7 +65,7 @@ class TemporalTensor(ABC):
     def subtime(self, from_t: int, to_t: int):
         raise NotImplementedError("subtime is not implemented")
 
-    def to(self, device: torch.device) -> "TemporalTensor":
+    def to(self, device: torch.device) -> Self:
         raise NotImplementedError("to is not implemented")
 
 
@@ -77,19 +75,19 @@ class SlicedTemporalTensor(TemporalTensor):
     and does not need to have a predefined size.
     """
 
-    def __init__(self, *args, **kwargs) -> None:
+    def __init__(self, **kwargs) -> None:
         """Initialize an empty tensor"""
-        super().__init__(*args, **kwargs)
-        self.tensors: List[torch.Tensor] = []
-        self.size: Optional[torch.Size] = None
-        self.device: Optional[torch.device] = None
-        self.dtype: Optional[torch.dtype] = None
+        super().__init__(**kwargs)
+        self.tensors: list[Tensor] = []
+        self.size: torch.Size | None = None
+        self.device: torch.device | None = None
+        self.dtype: torch.dtype | None = None
 
     def set(
         self,
         t: int,
-        value: torch.Tensor,
-        batch_dims: Optional[Tuple[int, int]],
+        value: Tensor,
+        batch_dims: tuple[int, int] | None,
     ) -> None:
         """Set a value of size (B × …) at time t"""
         if batch_dims is not None:
@@ -108,14 +106,14 @@ class SlicedTemporalTensor(TemporalTensor):
             )
         self.tensors[t] = value
 
-    def to(self, device: torch.device) -> "SlicedTemporalTensor":
+    def to(self, device: torch.device) -> Self:
         """Move the tensor to a specific device"""
-        s: "SlicedTemporalTensor" = SlicedTemporalTensor()
+        s: Self = SlicedTemporalTensor()
         for k in range(len(self.tensors)):
             s.set(k, self.tensors[k].to(device), batch_dims=None)
         return s
 
-    def get(self, t: int, batch_dims: Optional[Tuple[int, int]]) -> torch.Tensor:
+    def get(self, t: int, batch_dims: tuple[int, int] | None) -> Tensor:
         """Get the value of the tensor at time t"""
 
         assert (
@@ -124,7 +122,7 @@ class SlicedTemporalTensor(TemporalTensor):
         assert t < len(self.tensors), "Temporal index out of bounds"
         return self.tensors[t]
 
-    def get_full(self, batch_dims) -> torch.Tensor:
+    def get_full(self, batch_dims) -> Tensor:
         """Returns the complete tensor of size (T × B × …)"""
 
         assert (
@@ -133,11 +131,8 @@ class SlicedTemporalTensor(TemporalTensor):
         return torch.cat([a.unsqueeze(0) for a in self.tensors], dim=0)
 
     def get_time_truncated(
-        self,
-        from_time: int,
-        to_time: int,
-        batch_dims: Optional[Tuple[int, int]],
-    ) -> torch.Tensor:
+        self, from_time: int, to_time: int, batch_dims: tuple[int, int] | None
+    ) -> Tensor:
         """Returns tensor[from_time:to_time]"""
         assert 0 <= from_time < to_time and to_time >= 0
         assert batch_dims is None
@@ -149,9 +144,7 @@ class SlicedTemporalTensor(TemporalTensor):
             dim=0,
         )
 
-    def set_full(
-        self, value: torch.Tensor, batch_dims: Optional[Tuple[int, int]]
-    ) -> None:
+    def set_full(self, value: Tensor, batch_dims: tuple[int, int] | None) -> None:
         """Set the tensor given a (T × B × …) value tensor.
         The input tensor is cut into slices that are stored in a list of tensors
         """
@@ -171,7 +164,11 @@ class SlicedTemporalTensor(TemporalTensor):
         """Return the size of the batch dimension"""
         return self.tensors[0].size()[0]
 
-    def select_batch(self, batch_indexes: torch.Tensor) -> "SlicedTemporalTensor":
+    def tensor_size(self) -> torch.Size:
+        """Return the size of the tensor"""
+        return self.tensors[0].size()[1:]
+
+    def select_batch(self, batch_indexes: Tensor) -> Self:
         """Return the tensor where the batch dimension has been selected by the index"""
         assert batch_indexes.dtype in (torch.short, torch.int, torch.long)
         var = SlicedTemporalTensor()
@@ -191,7 +188,7 @@ class SlicedTemporalTensor(TemporalTensor):
             v = self.get(from_time + t, batch_dims=None)
             self.set(to_time + t, v, batch_dims=None)
 
-    def subtime(self, from_t: int, to_t: int) -> "CompactTemporalTensor":
+    def subtime(self, from_t: int, to_t: int) -> Self:
         """
         Return tensor[from_t:to_t]
 
@@ -212,8 +209,8 @@ class CompactTemporalTensor(TemporalTensor):
     It is faster than the `SlicedTemporalTensor`.
     """
 
-    def __init__(self, value: Optional[torch.Tensor] = None, *args, **kwargs) -> None:
-        super().__init__(*args, **kwargs)
+    def __init__(self, value: Tensor | None = None, **kwargs) -> None:
+        super().__init__(**kwargs)
         self.size = None
         self.device = None
         self.dtype = None
@@ -227,7 +224,7 @@ class CompactTemporalTensor(TemporalTensor):
     def set(self, t, value, batch_dims) -> SlicedTemporalTensor:
         raise NotImplementedError("Cannot set a value in a CompactTemporalTensor")
 
-    def select_batch(self, batch_indexes: torch.Tensor) -> "CompactTemporalTensor":
+    def select_batch(self, batch_indexes: Tensor) -> Self:
         assert batch_indexes.dtype in (torch.short, torch.int, torch.long)
         return CompactTemporalTensor(value=self.tensor[:, batch_indexes])
 
@@ -238,19 +235,19 @@ class CompactTemporalTensor(TemporalTensor):
             v.set(t, self.tensor[t], None)
         return v
 
-    def to(self, device: torch.device) -> "CompactTemporalTensor":
+    def to(self, device: torch.device) -> Self:
         if device == self.tensor.device:
             return self
         return CompactTemporalTensor(value=self.tensor.to(device))
 
-    def get(self, t: int, batch_dims: Optional[Tuple[int, int]]):
+    def get(self, t: int, batch_dims: tuple[int, int] | None) -> Tensor:
         assert t < self.tensor.size()[0], "Temporal index out of bounds"
         if batch_dims is None:
             return self.tensor[t]
         else:
             return self.tensor[t, batch_dims[0] : batch_dims[1]]
 
-    def get_full(self, batch_dims: Optional[Tuple[int, int]]):
+    def get_full(self, batch_dims: tuple[int, int] | None) -> Tensor:
         if batch_dims is None:
             return self.tensor
         else:
@@ -262,11 +259,10 @@ class CompactTemporalTensor(TemporalTensor):
     def batch_size(self) -> int:
         return self.tensor.size()[1]
 
-    def set_full(
-        self,
-        value: Optional[torch.Tensor],
-        batch_dims: Optional[Tuple[int, int]],
-    ):
+    def tensor_size(self) -> torch.Size:
+        return self.tensor.size()[2:]
+
+    def set_full(self, value: Tensor | None, batch_dims: tuple[int, int] | None):
         if self.tensor is None:
             if batch_dims is None:
                 self.size = value.size()

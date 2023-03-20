@@ -1,129 +1,90 @@
-# coding=utf-8
+#  SaBBLium ― A Python library for building and simulating multi-agent systems.
 #
-# Copyright © Facebook, Inc. and its affiliates.
-# Copyright © Sorbonne University
+#  Copyright © Facebook, Inc. and its affiliates.
+#  Copyright © Sorbonne University.
 #
-# This source code is licensed under the MIT license found in the
-# LICENSE file in the root directory of this source tree.
+#  This source code is licensed under the MIT license found in the
+#  LICENSE file in the root directory of this source tree.
 #
+
 import copy
+import warnings
 from abc import ABC
 from typing import (
     Any,
     Callable,
-    Dict,
-    List,
-    Optional,
-    Union,
 )
 
-import numpy as np
+
 import torch
 from gymnasium import Env, Space
 from gymnasium.core import ActType, ObsType
-from gymnasium.vector import VectorEnv
+from gymnasium.experimental.wrappers.conversion.numpy_to_torch import NumpyToTorchV0
 from gymnasium.wrappers import AutoResetWrapper
 from torch import nn, Tensor
 
 from sabblium import SeedableAgent, SerializableAgent, TimeAgent
 
-
-def _convert_action(action: Tensor) -> Union[int, np.ndarray]:
-    if len(action.size()) == 0:
-        action = action.item()
-        assert isinstance(action, int)
-    else:
-        action = np.array(action.tolist())
-    return action
+Frame = dict[str, Tensor]
 
 
-def _format_frame(
-    frame: Union[Dict[str, Tensor], List[Tensor], np.ndarray, Tensor, bool, int, float]
-) -> Union[Tensor, Dict[str, Tensor]]:
-    if isinstance(frame, Dict):
-        r = {}
-        for k in frame:
-            r[k] = _format_frame(frame[k])
-        return r
-    elif isinstance(frame, List):
-        t = torch.tensor(frame).unsqueeze(0)
-        if t.dtype == torch.float64 or t.dtype == torch.float32:
-            t = t.float()
-        else:
-            t = t.long()
-        return t
-    elif isinstance(frame, np.ndarray):
-        t = torch.from_numpy(frame).unsqueeze(0)
-        if t.dtype == torch.float64 or t.dtype == torch.float32:
-            t = t.float()
-        else:
-            t = t.long()
-        return t
-    elif isinstance(frame, Tensor):
-        return frame.unsqueeze(0)
-    elif isinstance(frame, bool):
-        return torch.tensor([frame]).bool()
-    elif isinstance(frame, int):
-        return torch.tensor([frame]).long()
-    elif isinstance(frame, float):
-        return torch.tensor([frame]).float()
+def _torch_cat_dict(f: list[Frame]) -> Frame:
+    # Auxiliary function to copy tensors for a specific key
+    def copy_tensor(tensor_list: list[Frame], key: str):
+        # Determine the shape and data type of the resulting tensor
+        tensor_shape = (len(tensor_list),) + tuple(tensor_list[0][key].shape)
+        tensor_dtype = tensor_list[0][key].dtype
 
-    else:
-        try:
-            # Check if it is a LazyFrame from OpenAI Baselines
-            o = torch.from_numpy(frame.__array__()).unsqueeze(0).float()
-            return o
-        except TypeError:
-            assert False
+        # Create an empty pre-allocated tensor with the appropriate shape and data type
+        result_tensor = torch.empty(tensor_shape, dtype=tensor_dtype)
 
+        # Fill the pre-allocated tensor with the values from the input frames
+        for i, frame in enumerate(tensor_list):
+            result_tensor[i].copy_(frame[key], non_blocking=True)
 
-def _torch_type(d: Dict[str, Tensor]) -> Dict[str, Tensor]:
-    return {k: d[k].float() if torch.is_floating_point(d[k]) else d[k] for k in d}
+        # Return the filled tensor
+        return result_tensor
 
-
-def _torch_cat_dict(d: List[Dict[str, Tensor]]) -> Dict[str, Tensor]:
-    r = {}
-    for k in d[0]:
-        r[k] = torch.cat([dd[k] for dd in d], dim=0)
-    return r
+    # For each key in the input frames, call the copy_tensor function to create and fill the pre-allocated tensor
+    return {k: copy_tensor(f, k) for k in f[0]}
 
 
 class GymAgent(TimeAgent, SeedableAgent, SerializableAgent, ABC):
-    default_seed = 42
+    """Create an Agent from a gymnasium environment"""
 
     def __init__(
         self,
         input_string: str = "action",
         output_string: str = "env/",
-        *args,
         **kwargs,
     ):
-        super().__init__(*args, **kwargs)
+        super().__init__(**kwargs)
+
+        if self._seed is None:
+            warnings.warn("The GymAgent won't be deterministic")
 
         self.ghost_params: nn.Parameter = nn.Parameter(torch.randn(()))
 
         self.input: str = input_string
         self.output: str = output_string
         self._timestep_from_reset: int = 0
-        self._nb_reset: int = 1
+        self._nb_reset: int = 0
 
-        self.observation_space: Optional[Space[ObsType]] = None
-        self.action_space: Optional[Space[ActType]] = None
+        self.observation_space: Space[ObsType] | None = None
+        self.action_space: Space[ActType] | None = None
 
-    def forward(self, t: int, *args, **kwargs) -> None:
-        if self._seed is None:
-            self.seed(self.default_seed)
+    def forward(self, t: int, **kwargs) -> None:
         if t == 0:
-            self._timestep_from_reset = 1
+            self._timestep_from_reset = 0
             self._nb_reset += 1
         else:
-            self._timestep_from_reset += 1
+            self._timestep_from_reset += 0
 
-    def set_obs(self, observations: Dict[str, Tensor], t: int) -> None:
-        for k in observations:
+    def set_state(self, states: Frame, t: int) -> None:
+        for key, tensor in states.items():
             self.set(
-                (self.output + k, t),
-                observations[k].to(self.ghost_params.device),
+                (self.output + key, t),
+                tensor.to(self.ghost_params.device),
             )
 
     def get_observation_space(self) -> Space[ObsType]:
@@ -139,228 +100,153 @@ class GymAgent(TimeAgent, SeedableAgent, SerializableAgent, ABC):
         return self.action_space
 
 
-class ParallelGymAgent(GymAgent):
+class SerialGymAgent(GymAgent):
     """Create an Agent from a gymnasium environment
-    To create an auto-reset ParallelGymAgent, use the gymnasium `AutoResetWrapper` in the make_env_fn
+    To create an auto-reset SerialGymAgent, use the gymnasium `AutoResetWrapper` in the make_env_fn
+    Warning: Make sure that AutoResetWrapper is the outermost wrapper
     """
 
     def __init__(
         self,
-        make_env_fn: Callable[[Optional[Dict[str, Any]]], Env],
-        num_envs: int,
-        make_env_args: Optional[Dict[str, Any]] = None,
-        *args,
+        make_env_fn: Callable[[dict[str, Any] | None], Env],
+        num_envs: int = 1,
+        make_env_args: dict[str, Any] | None = None,
         **kwargs,
     ):
         """Create an agent from a Gymnasium environment
 
         Args:
             make_env_fn ([function that returns a gymnasium.Env]): The function to create a single gymnasium environments
-            num_envs ([int]): The number of environments to create.
+            num_envs ([int]): The number of environments to create, defaults to 1
             make_env_args (dict): The arguments of the function that creates a gymnasium.Env
             input_string (str, optional): [the name of the action variable in the workspace]. Defaults to "action".
             output_string (str, optional): [the output prefix of the environment]. Defaults to "env/".
-            max_episode_steps (int, optional): Max number of steps per episode. Defaults to None (never ends)
         """
-        super().__init__(*args, **kwargs)
-        assert num_envs > 0, "n_envs must be > 0"
+        super().__init__(**kwargs)
+        if num_envs <= 0:
+            raise ValueError("The number of environments must be > 0")
 
-        self.make_env_fn: Callable[[Optional[Dict[str, Any]]], Env] = make_env_fn
+        self.make_env_fn: Callable[[dict[str, Any] | None], Env] = make_env_fn
         self.num_envs: int = num_envs
 
-        self.envs: List[Env] = []
-        self.cumulated_reward: Dict[int, float] = {}
+        self.envs: list[Env] = []
+        self._cumulated_reward: Tensor = torch.zeros(num_envs, dtype=torch.float32)
+        self._timestep: Tensor = torch.zeros(num_envs, dtype=torch.long)
 
-        self._timestep: Tensor
         self._is_autoreset: bool = False
-        self._last_frame: Dict[int] = {}
+        self._last_frame: dict[int, Frame] = {}
 
-        args: Dict[str, Any] = make_env_args if make_env_args is not None else {}
+        args: dict[str, Any] = make_env_args if make_env_args is not None else {}
         self._initialize_envs(num_envs=num_envs, make_env_args=args)
 
-    def _initialize_envs(self, num_envs, make_env_args: Dict[str, Any]):
-        self.envs = [self.make_env_fn(**make_env_args) for _ in range(num_envs)]
-        self._timestep = torch.zeros(len(self.envs), dtype=torch.long)
+    def _initialize_envs(self, num_envs: int, make_env_args: dict[str, Any]):
+        self.envs = [
+            NumpyToTorchV0(self.make_env_fn(**make_env_args)) for _ in range(num_envs)
+        ]
         self.observation_space = self.envs[0].observation_space
         self.action_space = self.envs[0].action_space
 
-        unwrapped_env = self.envs[0].unwrapped
-        wrapper = self.envs[0]
-        while type(wrapper) is not type(unwrapped_env):
-            if type(wrapper) == AutoResetWrapper:
-                self._is_autoreset = True
-            wrapper = wrapper.env
+        if type(self.envs[0].env) == AutoResetWrapper:
+            self._is_autoreset = True
 
-        if self._is_autoreset and self._max_episode_steps is None:
-            raise ValueError(
-                "AutoResetWrapper without max_episode_steps argument given will (probably) never"
-                "stop the GymAgent if wrapped with a TemporalAgent"
-            )
-
-    def _reset(self, k: int) -> Dict[str, Tensor]:
+    def _reset(self, k: int) -> Frame:
         env: Env = self.envs[k]
-        self.cumulated_reward[k] = 0.0
+        self._cumulated_reward[k] = 0.0
 
-        s: int = self._timestep_from_reset * self.num_envs * self._nb_reset * self._seed
-
-        s += (k + 1) * (self._timestep[k].item() + 1 if self._is_autoreset else 1)
-
-        o, info = env.reset(seed=s)
-        observation: Union[Tensor, Dict[str, Tensor]] = _format_frame(o)
+        observation, info = env.reset(
+            seed=self._seed + k if self._seed is not None else None
+        )
 
         self._timestep[k] = 0
 
-        if isinstance(observation, Tensor):
-            observation = {"env_obs": observation}
-        elif isinstance(observation, dict):
-            pass
-        else:
-            raise ValueError(
-                f"Observation must be a torch.Tensor or a dict, not {type(observation)}"
-            )
-
-        ret: Dict[str, Tensor] = {
-            **observation,
-            "terminated": torch.tensor([False]),
-            "truncated": torch.tensor([False]),
-            "reward": torch.tensor([0.0]).float(),
-            "cumulated_reward": torch.tensor([self.cumulated_reward[k]]),
-            "timestep": torch.tensor([self._timestep[k]]),
+        ret: Frame = {
+            "env_obs": observation,
+            "stopped": torch.tensor(False),
+            "terminated": torch.tensor(False),
+            "truncated": torch.tensor(False),
+            "reward": torch.tensor(0.0),
+            "cumulated_reward": self._cumulated_reward[k],
+            "timestep": self._timestep[k],
+            **{"info/" + k: v for k, v in info.items()},
         }
+
         self._last_frame[k] = ret
-        return _torch_type(ret)
+        return ret
 
-    def _step(self, k: int, action: Tensor):
+    def _step(self, k: int, action: ActType):
         env = self.envs[k]
-        action: Union[int, np.ndarray[int]] = _convert_action(action)
 
-        obs, reward, terminated, truncated, info = env.step(action)
-
-        self.cumulated_reward[k] += reward
-        observation: Union[Tensor, Dict[str, Tensor]] = _format_frame(obs)
-
-        if isinstance(observation, Tensor):
-            observation = {"env_obs": observation}
-        elif isinstance(observation, dict):
-            pass
+        # Following part to simplify when gymnasium AutoResetWrapper
+        # will switch to Sutton & Barto’s notation.
+        if (not self._is_autoreset) or (not self._last_frame[k]["stopped"]):
+            observation, reward, terminated, truncated, info = env.step(action)
         else:
-            raise ValueError(
-                f"Observation must be a torch.Tensor or a dict, not {type(observation)}"
-            )
+            observation = self.first_obs
+            info = self.first_info
+            terminated, truncated, reward = False, False, 0.0
+        if self._is_autoreset and (terminated or truncated):
+            # swap the observation and info
+            observation, self.first_obs = info.pop("final_observation"), observation
+            self.first_info = copy.copy(info)
+            info = self.first_info.pop("final_info")
+        # End of part to simplify.
 
+        self._cumulated_reward[k] += reward
         self._timestep[k] += 1
 
-        ret: Dict[str, Tensor] = {
-            **observation,
-            "terminated": torch.tensor([terminated]),
-            "truncated": torch.tensor([truncated]),
-            "reward": torch.tensor([reward]).float(),
-            "cumulated_reward": torch.tensor([self.cumulated_reward[k]]),
-            "timestep": torch.tensor([self._timestep[k]]),
+        ret: Frame = {
+            "env_obs": observation,
+            "stopped": torch.tensor(terminated or truncated),
+            "terminated": torch.tensor(terminated),
+            "truncated": torch.tensor(truncated),
+            "reward": torch.tensor(reward),
+            "cumulated_reward": self._cumulated_reward[k],
+            "timestep": self._timestep[k],
+            **{"info/" + k: v for k, v in info.items()},
         }
+
         self._last_frame[k] = ret
-        return _torch_type(ret)
+        return ret
 
     def forward(self, t: int = 0, **kwargs) -> None:
-        """Do one step by reading the `action` at t-1
-        If t==0, environments are reset
-        If render is True, then the output of env.render() is written as env/rendering
+        """Do one step by reading the `input_string` in the workspace at t-1
+        If t==0, environments are reset with the seed given in the constructor
+        Without seed provided, the environment is reset with a random seed.
         """
         super().forward(t, **kwargs)
 
-        observations = []
+        states = []
         if t == 0:
             for k, env in enumerate(self.envs):
-                observations.append(self._reset(k))
+                states.append(self._reset(k))
         else:
             action = self.get((self.input, t - 1))
             assert action.size()[0] == self.num_envs, "Incompatible number of envs"
 
             for k, env in enumerate(self.envs):
-                if self._is_autoreset or not self._last_frame[k]["terminated"]:
-                    observations.append(self._step(k, action[k]))
+                if self._is_autoreset or not self._last_frame[k]["stopped"]:
+                    states.append(self._step(k, action[k]))
                 else:
-                    observations.append(self._last_frame[k])
-        self.set_obs(observations=_torch_cat_dict(observations), t=t)
+                    states.append(self._last_frame[k])
+        self.set_state(states=_torch_cat_dict(states), t=t)
 
 
-class VecGymAgent(GymAgent):
-    def __init__(
-        self,
-        make_envs_fn: Callable[[Optional[Dict[str, Any]]], VectorEnv],
-        vec_env_args: Optional[Dict[str, Any]] = None,
-        *args,
-        **kwargs,
-    ):
-        super().__init__(*args, **kwargs)
-
-        args: Dict[str, Any] = vec_env_args or {}
-        self.envs: VectorEnv = make_envs_fn(**args)
-
-        self.observation_space = self.envs.single_observation_space
-        self.action_space = self.envs.single_action_space
-
-        self.cumulated_reward: Tensor = torch.zeros(self.envs.num_envs)
-
-    def forward(self, t: int, **kwargs) -> None:
-        super().forward(t, **kwargs)
-
-        if t == 0:
-            s: int = self._seed * self._nb_reset
-            obs, infos = self.envs.reset(seed=s)
-            termination = torch.tensor([False] * self.envs.num_envs)
-            truncation = torch.tensor([False] * self.envs.num_envs)
-            rewards = torch.tensor([0.0] * self.envs.num_envs)
-            self.cumulated_reward = torch.zeros(self.envs.num_envs)
-        else:
-            action = self.get((self.input, t - 1))
-            assert (
-                action.size()[0] == self.envs.num_envs
-            ), "Incompatible number of actions"
-            converted_action: Union[int, np.ndarray[int]] = _convert_action(action)
-            obs, rewards, termination, truncation, infos = self.envs.step(
-                converted_action
-            )
-            rewards = torch.tensor(rewards).float()
-            termination = torch.tensor(termination)
-            truncation = torch.tensor(truncation)
-            self.cumulated_reward = self.cumulated_reward + rewards
-
-        observation: Union[Tensor, Dict[str, Tensor]] = _format_frame(obs)
-
-        if not isinstance(observation, Tensor):
-            raise ValueError("Observation can't be an OrderedDict in a VecEnv")
-
-        ret: Dict[str, Tensor] = {
-            "env_obs": observation.squeeze(0),
-            "terminated": termination,
-            "truncated": truncation,
-            "reward": rewards,
-            "cumulated_reward": self.cumulated_reward,
-        }
-        self.set_obs(observations=ret, t=t)
-
-
-class ImageGymAgent(GymAgent, ABC):
+class VisualGymAgent(GymAgent, ABC):
     """
-    GymAgent compatible with image observations
+    GymAgent compatible with visual observations
     """
 
-    def __init__(self, *args, **kwargs):
-        super().__init__(*args, **kwargs)
+    def __init__(self, **kwargs):
+        super().__init__(**kwargs)
 
     def serialize(self):
         """Return a serializable GymAgent without the environments"""
+        # TODO: add gymnasium environments to the serialization but not their unserializable attributes
         copied_agent = copy.copy(self)
         copied_agent.envs = None
         return copied_agent
 
 
-class VecImageGymAgent(VecGymAgent, ImageGymAgent):
-    def __init__(self, *args, **kwargs):
-        super().__init__(*args, **kwargs)
-
-
-class ParallelImageGymAgent(ParallelGymAgent, ImageGymAgent):
-    def __init__(self, *args, **kwargs):
-        super().__init__(*args, **kwargs)
+class VisualSerialGymAgent(SerialGymAgent, VisualGymAgent):
+    def __init__(self, **kwargs):
+        super().__init__(**kwargs)

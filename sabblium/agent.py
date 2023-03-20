@@ -1,22 +1,19 @@
-# coding=utf-8
+#  SaBBLium ― A Python library for building and simulating multi-agent systems.
 #
-# Copyright © Facebook, Inc. and its affiliates.
-# Copyright © Sorbonne University
+#  Copyright © Facebook, Inc. and its affiliates.
+#  Copyright © Sorbonne University.
 #
-# This source code is licensed under the MIT license found in the
-# LICENSE file in the root directory of this source tree.
+#  This source code is licensed under the MIT license found in the
+#  LICENSE file in the root directory of this source tree.
 #
 
 import copy
 import pickle
 import time
 from abc import ABC
-from typing import Any, List, Optional, Tuple, Union
+from typing import Any, IO, Self
 
 from torch import Tensor
-from typing.io import IO
-
-import torch
 import torch.nn as nn
 
 from .workspace import Workspace
@@ -25,16 +22,16 @@ from .workspace import Workspace
 class Agent(nn.Module, ABC):
     """An `Agent` is a `torch.nn.Module` that reads and writes into a `sabblium.Workspace`"""
 
-    def __init__(self, name: Optional[str] = None, *args, **kwargs) -> None:
+    def __init__(self, name: str | None = None, **kwargs) -> None:
         """To create a new Agent
 
         Args:
-            name (Optional[str]): An agent can have a name that will allow to perform operations on agents that are composed into more complex agents.
+            name ([str | None]): An agent can have a name that will allow to perform operations on agents that are composed into more complex agents.
         """
-        super().__init__(*args, **kwargs)
-        self.workspace: Optional[Workspace] = None
-        self._name: Optional[str] = name
-        self.__trace_file: Optional[IO] = None
+        super().__init__(**kwargs)
+        self.workspace: Workspace | None = None
+        self._name: str | None = name
+        self.__trace_file: IO | None = None
 
     def set_name(self, name: str) -> None:
         """Set the name of this agent
@@ -44,7 +41,7 @@ class Agent(nn.Module, ABC):
         """
         self._name = name
 
-    def get_name(self) -> Optional[str]:
+    def get_name(self) -> str | None:
         """Get the name of the agent
 
         Returns:
@@ -75,7 +72,7 @@ class Agent(nn.Module, ABC):
         """The generic function to override when defining a new agent"""
         raise NotImplementedError("Your agent must override forward")
 
-    def clone(self) -> "Agent":
+    def clone(self) -> Self:
         """Create a clone of the agent
 
         Returns:
@@ -84,7 +81,7 @@ class Agent(nn.Module, ABC):
         self.zero_grad()
         return copy.deepcopy(self)
 
-    def get(self, index: Union[str, Tuple[str, int]]) -> Tensor:
+    def get(self, index: str | tuple[str, int]) -> Tensor:
         """Returns the value of a particular variable in the agent workspace
 
         Args:
@@ -113,7 +110,7 @@ class Agent(nn.Module, ABC):
         """Return a variable truncated between from_time and to_time"""
         return self.workspace.get_time_truncated(var_name, from_time, to_time)
 
-    def set(self, index: Union[str, Tuple[str, int]], value: Tensor) -> None:
+    def set(self, index: str | tuple[str, int], value: Tensor) -> None:
         """Write a variable in the workspace
 
         Args:
@@ -142,7 +139,7 @@ class Agent(nn.Module, ABC):
                 "index must be either str or tuple(str, int)".format(self.__name__)
             )
 
-    def get_by_name(self, n: str) -> List["Agent"]:
+    def get_by_name(self, n: str) -> list[Self]:
         """Returns the list of agents included in this agent that have a particular name."""
         if n == self._name:
             return [self]
@@ -155,10 +152,10 @@ class TimeAgent(Agent, ABC):
     use a time index in their `__call__` function (not mandatory)
     """
 
-    def __init__(self, *args, **kwargs) -> None:
-        super().__init__(*args, **kwargs)
+    def __init__(self, **kwargs) -> None:
+        super().__init__(**kwargs)
 
-    def forward(self, t: int, *args, **kwargs) -> Any:
+    def forward(self, t: int, **kwargs) -> Any:
         raise NotImplementedError(
             "Your TemporalAgent must override forward with a time index"
         )
@@ -170,10 +167,10 @@ class SerializableAgent(Agent, ABC):
     You can override the serialize method to return the agent without the attributes that are not serializable.
     """
 
-    def __init__(self, *args, **kwargs) -> None:
-        super().__init__(*args, **kwargs)
+    def __init__(self, **kwargs) -> None:
+        super().__init__(**kwargs)
 
-    def serialize(self) -> "SerializableAgent":
+    def serialize(self) -> Self:
         """
         Return the `SerializableAgent` without the unsersializable attributes
         """
