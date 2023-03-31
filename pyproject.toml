@@ -29,7 +29,7 @@ classifiers = [
 ]
 dependencies = [
     "torchvision",
-    "gymnasium",
+    "gymnasium>=0.28.1",
     "hydra-core"
 ]
 

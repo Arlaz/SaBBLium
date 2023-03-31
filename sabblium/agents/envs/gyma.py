@@ -19,7 +19,7 @@ from typing import (
 import torch
 from gymnasium import Env, Space
 from gymnasium.core import ActType, ObsType
-from gymnasium.experimental.wrappers.conversion.numpy_to_torch import NumpyToTorchV0
+from gymnasium.experimental.wrappers.numpy_to_torch import NumpyToTorchV0
 from gymnasium.wrappers import AutoResetWrapper
 from torch import nn, Tensor
 
