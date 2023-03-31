@@ -56,7 +56,7 @@ write_to = "sabblium/_version.py"
 
 [tool.black]
 line-length = 88
-target-version = ['py310']
+target-version = ['py311']
 
 # ... other project metadata fields as specified in:
 #     https://packaging.python.org/en/latest/specifications/declaring-project-metadata/

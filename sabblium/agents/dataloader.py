@@ -8,14 +8,13 @@
 #
 
 import torch
-from gymnasium.utils import seeding
 from torch import Tensor
 from torch.utils import data
 
-from sabblium import Agent
+from sabblium import Agent, SeedableAgent
 
 
-class ShuffledDatasetAgent(Agent):
+class ShuffledDatasetAgent(Agent, SeedableAgent):
     """An agent that read a dataset infinitely in a shuffle order."""
 
     def __init__(
@@ -37,12 +36,9 @@ class ShuffledDatasetAgent(Agent):
         self.batch_size: int = batch_size
         self.ghost_params = torch.nn.Parameter(torch.randn(()))
 
-    def seed(self, seed: int = None):
-        self.np_random, seed = seeding.np_random(seed)
-        return [seed]
-
     def forward(self, **kwargs):
         """Write a batch of data at timestep==0 in the workspace"""
+        # TODO: use torch sampler
         vs = []
         for k in range(self.batch_size):
             idx = self.np_random.integers(len(self.dataset))
@@ -55,11 +51,7 @@ class ShuffledDatasetAgent(Agent):
                     xs.append(torch.tensor(xx).unsqueeze(0))
             vs.append(xs)
 
-        vals = []
-        for k in range(len(vs[0])):
-            val = [v[k] for v in vs]
-            val = torch.cat(val, dim=0)
-            vals.append(val)
+        vals = [torch.cat([v[k] for v in vs], dim=0) for k in range(len(vs[0]))]
 
         for name, value in zip(self.output_names, vals):
             self.set((name, 0), value.to(self.ghost_params.device))
@@ -72,7 +64,10 @@ class DataLoaderAgent(Agent):
     """
 
     def __init__(
-        self, dataloader, output_names: tuple[str, str] = ("x", "y"), **kwargs
+        self,
+        dataloader: data.dataloader,
+        output_names: tuple[str, str] = ("x", "y"),
+        **kwargs,
     ):
         """Create the agent based on a dataloader
         Args:
@@ -80,7 +75,7 @@ class DataLoaderAgent(Agent):
             output_names (tuple, optional): Names of the variable to write in the workspace. Defaults to ("x", "y").
         """
         super().__init__(**kwargs)
-        self.dataloader = dataloader
+        self.dataloader: data.dataloader = dataloader
         self.iter = iter(self.dataloader)
         self.output_names: tuple[str, str] = output_names
         self._finished: bool = False
