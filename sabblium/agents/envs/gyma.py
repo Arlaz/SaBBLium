@@ -35,10 +35,10 @@ def _torch_cat_dict(f: list[Frame]) -> Frame:
         tensor_shape = (len(tensor_list),) + tuple(tensor_list[0][key].shape)
         tensor_dtype = tensor_list[0][key].dtype
 
-        # Create an empty pre-allocated tensor with the appropriate shape and data type
+        # Create an empty pre-allocated tensor with the appropriate shape and data type.
         result_tensor = torch.empty(tensor_shape, dtype=tensor_dtype)
 
-        # Fill the pre-allocated tensor with the values from the input frames
+        # Fill the pre-allocated tensor with the values from the input frames.
         for i, frame in enumerate(tensor_list):
             result_tensor[i].copy_(frame[key], non_blocking=True)
 
@@ -103,7 +103,7 @@ class GymAgent(TimeAgent, SeedableAgent, SerializableAgent, ABC):
 class SerialGymAgent(GymAgent):
     """Create an Agent from a gymnasium environment
     To create an auto-reset SerialGymAgent, use the gymnasium `AutoResetWrapper` in the make_env_fn
-    Warning: Make sure that AutoResetWrapper is the outermost wrapper
+    Warning: Make sure AutoResetWrapper is the outermost wrapper.
     """
 
     def __init__(
@@ -160,7 +160,7 @@ class SerialGymAgent(GymAgent):
         self._timestep[k] = 0
 
         ret: Frame = {
-            "env_obs": observation,
+            "obs": observation,
             "stopped": torch.tensor(False),
             "terminated": torch.tensor(False),
             "truncated": torch.tensor(False),
@@ -195,7 +195,7 @@ class SerialGymAgent(GymAgent):
         self._timestep[k] += 1
 
         ret: Frame = {
-            "env_obs": observation,
+            "obs": observation,
             "stopped": torch.tensor(terminated or truncated),
             "terminated": torch.tensor(terminated),
             "truncated": torch.tensor(truncated),

@@ -55,11 +55,11 @@ class Agents(SeedableAgent, SerializableAgent):
     def forward(self, **kwargs) -> list[Any]:
         pass
 
-    def get_by_name(self, n) -> list[Agent]:
+    def get_by_name(self, name: str) -> list[Agent]:
         r = []
         for a in self.agents:
-            r += a.get_by_name(n)
-        if n == self._name:
+            r += a.get_by_name(name)
+        if name == self._name:
             r += [self]
         return r
 
@@ -186,9 +186,9 @@ class TemporalAgent(TimeAgent, SerializableAgent):
     def forward(self, t: int, **kwargs) -> Any:
         pass
 
-    def get_by_name(self, n: str) -> list[Agent]:
-        r = self.agent.get_by_name(n)
-        if n == self._name:
+    def get_by_name(self, name: str) -> list[Agent]:
+        r = self.agent.get_by_name(name)
+        if name == self._name:
             r += [self]
         return r
 

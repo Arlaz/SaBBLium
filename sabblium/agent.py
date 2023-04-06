@@ -102,9 +102,7 @@ class Agent(nn.Module, ABC):
         elif isinstance(index, tuple):
             return self.workspace.get(index[0], index[1])
         else:
-            raise TypeError(
-                "index must be either str or tuple(str, int)".format(self.__name__)
-            )
+            raise TypeError("index must be either str or tuple(str, int)".format())
 
     def get_time_truncated(self, var_name: str, from_time: int, to_time: int) -> Tensor:
         """Return a variable truncated between from_time and to_time"""
@@ -135,9 +133,7 @@ class Agent(nn.Module, ABC):
         elif isinstance(index, tuple):
             self.workspace.set(var_name=index[0], t=index[1], v=value)
         else:
-            raise TypeError(
-                "index must be either str or tuple(str, int)".format(self.__name__)
-            )
+            raise TypeError("index must be either str or tuple(str, int)".format())
 
     def get_by_name(self, n: str) -> list[Self]:
         """Returns the list of agents included in this agent that have a particular name."""

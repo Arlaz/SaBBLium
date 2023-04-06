@@ -134,20 +134,24 @@ def compute_reinforce_loss(
     }
 
 
-def compute_critic_loss(discount_factor, reward, must_bootstrap, q_values, action):
+def compute_critic_loss(
+    discount_factor, reward, must_bootstrap, action, q_values, q_target=None
+):
     """Compute critic loss
     Args:
         discount_factor (float): The discount factor
         reward (torch.Tensor): a (T × B) tensor containing the rewards
         must_bootstrap (torch.Tensor): a (T × B) tensor containing 0 if the episode is completed at time $t$
-        q_values (torch.Tensor): a (T × B × A) tensor containing Q values
         action (torch.LongTensor): a (T) long tensor containing the chosen action
+        q_values (torch.Tensor): a (T × B × A) tensor containing Q values
+        q_target (torch.Tensor, optional): a (T × B × A) tensor containing Q target values
 
     Returns:
         torch.Scalar: The loss
     """
-
-    max_q = q_values[1:].amax(dim=-1).detach()
+    if q_target is None:
+        q_target = q_values
+    max_q = q_target[1:].amax(dim=-1).detach()
     target = reward[1:] + discount_factor * max_q * must_bootstrap[1:]
     act = action.unsqueeze(dim=-1)
     qvals = q_values.gather(dim=1, index=act).squeeze(dim=1)
@@ -155,20 +159,23 @@ def compute_critic_loss(discount_factor, reward, must_bootstrap, q_values, actio
 
 
 def compute_critic_loss_transitional(
-    discount_factor, reward, must_bootstrap, q_values, action
+    discount_factor, reward, must_bootstrap, action, q_values, q_target=None
 ):
     """Compute critic loss
     Args:
         discount_factor (float): The discount factor
         reward (torch.Tensor): a (2 × T × B) tensor containing the rewards
         must_bootstrap (torch.Tensor): a (2 × T × B) tensor containing 0 if the episode is completed at time $t$
-        q_values (torch.Tensor): a (2 × T × B × A) tensor containing Q values
         action (torch.LongTensor): a (2 × T) long tensor containing the chosen action
+        q_values (torch.Tensor): a (2 × T × B × A) tensor containing Q values
+        q_target (torch.Tensor, optional): a (2 × T × B × A) tensor containing target Q values
 
     Returns:
         torch.Scalar: The loss
     """
-    max_q = q_values[1].amax(dim=-1).detach()
+    if q_target is None:
+        q_target = q_values
+    max_q = q_target[1].amax(dim=-1).detach()
     target = reward[1] + discount_factor * max_q * must_bootstrap[1]
     act = action[0].unsqueeze(dim=-1)
     qvals = q_values[0].gather(dim=1, index=act).squeeze(dim=1)

@@ -8,7 +8,6 @@ outputs/
 # misc
 *wandb*
 *.hydra*
-*.ruff_cache*
 /sabblium/_version.py
 
 
@@ -235,6 +234,9 @@ venv.bak/
 
 # mkdocs documentation
 /site
+
+# ruff linter
+.ruff_cache
 
 # mypy
 .mypy_cache/
